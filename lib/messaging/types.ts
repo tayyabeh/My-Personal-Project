@@ -46,6 +46,9 @@ export interface MessagingAdapter {
   /** Send a pre-approved template. Always allowed, any time. */
   sendTemplate(spec: TemplateSpec): Promise<void>;
 
+  /** Is the 24-hour freeform window currently open? */
+  windowIsOpen(): Promise<boolean>;
+
   /** Download a voice note's raw bytes given the media id from a webhook. */
   downloadMedia(mediaId: string): Promise<{ buffer: Buffer; mimeType: string }>;
 

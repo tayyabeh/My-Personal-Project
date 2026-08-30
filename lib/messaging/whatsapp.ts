@@ -84,6 +84,11 @@ export class WhatsAppAdapter implements MessagingAdapter {
   }
 
   /** `to` defaults to WHATSAPP_RECIPIENT_NUMBER, which is what the cron jobs use. */
+  async windowIsOpen(): Promise<boolean> {
+    const last = await lastInboundAt();
+    return last !== null && Date.now() - last.getTime() < TWENTY_FOUR_HOURS_MS;
+  }
+
   async sendText(text: string, to?: string): Promise<void> {
     await postMessage({
       messaging_product: 'whatsapp',

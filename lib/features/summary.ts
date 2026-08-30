@@ -9,12 +9,40 @@ import { db } from '../supabase';
 import { llm } from '../llm';
 import { log } from '../logger';
 import { messaging, templates } from '../messaging';
-import { pendingTasks, recentCompletionRate, todayLocal } from '../context';
+import { pendingTasks, recentCompletionRate } from '../context';
 
-/** Tomorrow's date in Karachi, as YYYY-MM-DD. */
-function tomorrowLocal(): string {
-  const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
-  return tomorrow.toLocaleDateString('en-CA', { timeZone: 'Asia/Karachi' });
+/** A date offset from now, in Karachi, as YYYY-MM-DD. */
+function localDate(dayOffset = 0): string {
+  const when = new Date(Date.now() + dayOffset * 24 * 60 * 60 * 1000);
+  return when.toLocaleDateString('en-CA', { timeZone: 'Asia/Karachi' });
+}
+
+/** The current hour in Karachi, 0-23. */
+function localHour(): number {
+  return Number(
+    new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Karachi',
+      hour: '2-digit',
+      hour12: false,
+    }).format(new Date()),
+  );
+}
+
+/**
+ * Which day the night summary is actually closing out.
+ *
+ * Tayyab sleeps around 5am, so his summary runs after midnight — by which
+ * point the calendar date has already rolled over. Running at 3am on the
+ * 1st should summarise the 31st, not the empty new day. Anything before
+ * 6am is treated as the tail of the previous day.
+ */
+function dayBeingSummarised(): string {
+  return localHour() < 6 ? localDate(-1) : localDate(0);
+}
+
+/** Where unfinished work rolls to: the day after the one being closed. */
+function rolloverTarget(): string {
+  return localHour() < 6 ? localDate(0) : localDate(1);
 }
 
 /**
@@ -50,7 +78,7 @@ async function generateLine(prompt: string): Promise<string> {
 // ---------------------------------------------------------------------
 
 export async function runNightSummary(): Promise<string> {
-  const today = todayLocal();
+  const today = dayBeingSummarised();
 
   // Everything that was on the plate for today.
   const { data: todaysTasks, error } = await db()
@@ -73,7 +101,7 @@ export async function runNightSummary(): Promise<string> {
     const { error: rollError } = await db()
       .from('tasks')
       .update({
-        due_date: tomorrowLocal(),
+        due_date: rolloverTarget(),
         rollover_count: (task.rollover_count ?? 0) + 1,
       })
       .eq('id', task.id);
@@ -147,4 +175,57 @@ export async function runMorningGreeting(): Promise<string> {
   await messaging.send(body, templates.morningGreeting(line));
 
   return `morning greeting sent, ${rolled.length} rolled-over tasks mentioned`;
+}
+
+// ---------------------------------------------------------------------
+// Daytime check-ins
+// ---------------------------------------------------------------------
+
+/**
+ * A short nudge during the day so tasks stay front of mind.
+ *
+ * Two deliberate choices:
+ *  - If nothing is pending, we send nothing. A reminder about an empty
+ *    list is just noise, and noise is how people start ignoring the bot.
+ *  - If the 24-hour window has closed we skip rather than fall back to a
+ *    template. A nudge is not worth spending a template on, and the next
+ *    real message reopens the window anyway.
+ */
+export async function runCheckIn(): Promise<string> {
+  const tasks = await pendingTasks();
+
+  if (tasks.length === 0) {
+    return 'skipped: nothing pending';
+  }
+
+  if (!(await messaging.windowIsOpen())) {
+    log.info('Check-in skipped, 24-hour window closed');
+    return 'skipped: window closed';
+  }
+
+  // Lead with whatever has slipped most often — that is the thing being
+  // avoided, and the whole point of asking repeatedly.
+  const sorted = [...tasks].sort((a, b) => b.rollover_count - a.rollover_count);
+  const worst = sorted[0];
+
+  const line = await generateLine(
+    `Write one short nudge asking whether the user has made progress. ` +
+      `They have ${tasks.length} task(s) still open. ` +
+      (worst.rollover_count > 0
+        ? `The worst offender is "${worst.title}", carried over ${worst.rollover_count} times. Mention it directly. `
+        : '') +
+      `Do not congratulate them. Do not assume anything is finished.`,
+  );
+
+  const body =
+    `${line}\n\n` +
+    sorted
+      .slice(0, 6)
+      .map((t) => `• ${t.title}${t.rollover_count > 0 ? ` (${t.rollover_count}x)` : ''}`)
+      .join('\n') +
+    `\n\nTell me if any of these are done.`;
+
+  await messaging.sendText(body);
+
+  return `check-in sent for ${tasks.length} pending task(s)`;
 }
