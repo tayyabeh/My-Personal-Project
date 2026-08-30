@@ -9,7 +9,7 @@ import { z } from 'zod';
 import { completeJson } from '../llm/json';
 
 export const IntentSchema = z.object({
-  intent: z.enum(['add_tasks', 'complete_task', 'list_tasks', 'add_reminder', 'other']),
+  intent: z.enum(['add_tasks', 'complete_task', 'list_tasks', 'add_reminder', 'web_search', 'other']),
 });
 
 export type Intent = z.infer<typeof IntentSchema>['intent'];
@@ -21,7 +21,8 @@ Reply ONLY with JSON: {"intent": "..."} where intent is one of:
 - "complete_task" : the user is reporting something is finished
 - "list_tasks"    : the user is asking what they have to do
 - "add_reminder"  : the user wants to be reminded at a SPECIFIC time or date
-- "other"         : anything else (questions, chat, unclear)
+- "web_search"    : a factual question needing outside or current information
+- "other"         : small talk, or anything about the user's own tasks and data
 
 A message is "add_reminder" only when it names a time or day. Without one it
 is "add_tasks".
@@ -40,7 +41,10 @@ const EXAMPLES: Array<[string, Intent]> = [
   ['kal subah 8 baje dawai leni hai yaad dilana', 'add_reminder'],
   ['I should buy milk at some point', 'add_tasks'],
   ['how are you', 'other'],
-  ['what is the capital of France', 'other'],
+  ['what is the capital of France', 'web_search'],
+  ['who won the match yesterday', 'web_search'],
+  ['what is the dollar rate in pakistan today', 'web_search'],
+  ['thanks', 'other'],
 ];
 
 export async function classifyIntent(text: string): Promise<Intent> {

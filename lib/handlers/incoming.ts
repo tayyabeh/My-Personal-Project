@@ -22,6 +22,7 @@ import {
 } from '../features/tasks';
 import { pendingTasks, contextSummary } from '../context';
 import { extractReminder, saveReminder, humanTime } from '../features/reminders';
+import { answerWithSources } from '../features/search';
 
 /**
  * Save the inbound message, and tell the caller whether this is the
@@ -241,6 +242,9 @@ export async function handleIncoming(message: IncomingMessage): Promise<void> {
       break;
     case 'add_reminder':
       await handleAddReminder(text, to);
+      break;
+    case 'web_search':
+      await messaging.sendText(await answerWithSources(text), to);
       break;
     case 'list_tasks':
       await messaging.sendText(await pendingSummary(), to);
