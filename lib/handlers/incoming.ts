@@ -132,7 +132,7 @@ async function handleCompleteTask(text: string, to: string): Promise<void> {
   );
 }
 
-async function handleOther(text: string, to: string): Promise<void> {
+async function handleOther(text: string, to: string, wasVoice: boolean): Promise<void> {
   // A short, context-aware conversational reply. Kept brief on purpose —
   // long replies on WhatsApp are unpleasant to read.
   const context = await contextSummary();
@@ -142,9 +142,16 @@ async function handleOther(text: string, to: string): Promise<void> {
       {
         role: 'system',
         content:
-          'You are a personal assistant on WhatsApp. Reply in two or three sentences at most. ' +
-          'Be direct and warm, not chirpy. Never invent tasks or claim something was completed ' +
-          'unless it appears in the context below.\n\n' +
+          "You are Tayyab's personal assistant on WhatsApp.\n\n" +
+          'IMPORTANT — what you can actually do. Never deny these:\n' +
+          '- You CAN hear voice notes. They are transcribed for you automatically, so a ' +
+          'voice message reaches you as text. Never say you cannot hear audio or that you ' +
+          'are text-only; that is false and confusing.\n' +
+          '- You can record tasks, mark them done, and list what is pending.\n\n' +
+          'Style: reply in two or three sentences at most. Direct and warm, not chirpy. ' +
+          'Never invent tasks or claim something was completed unless it appears in the ' +
+          'context below.\n\n' +
+          (wasVoice ? 'This message arrived as a voice note and was transcribed.\n\n' : '') +
           context,
       },
       { role: 'user', content: text },
@@ -204,6 +211,6 @@ export async function handleIncoming(message: IncomingMessage): Promise<void> {
       await messaging.sendText(await pendingSummary(), to);
       break;
     default:
-      await handleOther(text, to);
+      await handleOther(text, to, message.kind === 'audio');
   }
 }
