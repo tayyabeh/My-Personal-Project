@@ -33,7 +33,7 @@ export const env = {
 
   llmProvider: () => optional('LLM_PROVIDER', 'groq'),
   groqApiKey: () => required('GROQ_API_KEY'),
-  groqModel: () => optional('GROQ_MODEL', 'openai/gpt-oss-120b'),
+  groqModel: () => optional('GROQ_MODEL', 'qwen/qwen3.8-27b'),
   groqWhisperModel: () => optional('GROQ_WHISPER_MODEL', 'whisper-large-v3-turbo'),
   geminiApiKey: () => required('GEMINI_API_KEY'),
   geminiModel: () => optional('GEMINI_MODEL', 'gemini-2.0-flash'),
