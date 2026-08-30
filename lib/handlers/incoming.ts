@@ -21,6 +21,7 @@ import {
   pendingSummary,
 } from '../features/tasks';
 import { pendingTasks, contextSummary } from '../context';
+import { extractReminder, saveReminder, humanTime } from '../features/reminders';
 
 /**
  * Save the inbound message, and tell the caller whether this is the
@@ -132,6 +133,37 @@ async function handleCompleteTask(text: string, to: string): Promise<void> {
   );
 }
 
+async function handleAddReminder(text: string, to: string): Promise<void> {
+  const parsed = await extractReminder(text);
+
+  if (!parsed) {
+    await messaging.sendText(
+      "I couldn't work out when you meant. Try something like \"remind me to call the bank on Thursday at 3pm\".",
+      to,
+    );
+    return;
+  }
+
+  const { calendarError } = await saveReminder(parsed.title, parsed.when);
+
+  const lines = [
+    `Reminder set: ${parsed.title}`,
+    humanTime(parsed.when),
+    "I'll message you 5 minutes before.",
+  ];
+
+  // The reminder is saved either way; only the calendar copy can fail.
+  if (calendarError === 'NOT_CONNECTED') {
+    lines.push('', "(Not in Google Calendar yet — your Google account isn't connected.)");
+  } else if (calendarError) {
+    lines.push('', '(Saved here, but Google Calendar rejected it.)');
+  } else {
+    lines.push('Added to your Google Calendar too.');
+  }
+
+  await messaging.sendText(lines.join('\n'), to);
+}
+
 async function handleOther(text: string, to: string, wasVoice: boolean): Promise<void> {
   // A short, context-aware conversational reply. Kept brief on purpose —
   // long replies on WhatsApp are unpleasant to read.
@@ -206,6 +238,9 @@ export async function handleIncoming(message: IncomingMessage): Promise<void> {
       break;
     case 'complete_task':
       await handleCompleteTask(text, to);
+      break;
+    case 'add_reminder':
+      await handleAddReminder(text, to);
       break;
     case 'list_tasks':
       await messaging.sendText(await pendingSummary(), to);
