@@ -10,6 +10,7 @@ import { z } from 'zod';
 import { findEvents, updateEvent, deleteEvent } from '../google/calendar';
 import { extractReminder } from '../features/reminders';
 import { TIMEZONE } from '../env';
+import { scheduleTodaysPrayers, prayerTimesMessage } from '../features/prayer';
 import type { Tool } from './types';
 
 function when(iso: string): string {
@@ -79,5 +80,25 @@ export const removeCalendarEvent: Tool<{ id: string }> = {
   async run({ id }) {
     await deleteEvent(id);
     return `Calendar se event hata diya (id ${id}).`;
+  },
+};
+
+/**
+ * Namaz times, and the reminders for them.
+ *
+ * Lives with the calendar tools because it is the same job: something
+ * happens at a time, and Tayyab wants warning before it.
+ */
+export const namazTimes: Tool<Record<string, never>> = {
+  name: 'namaz_times',
+  description:
+    'Aaj ki namaz timings batao (Karachi ke hisab se) aur 15 minute pehle ke reminders laga do. ' +
+    'Jab user namaz ke waqt poochhe ya reminder maange, tab chalao.',
+  args: '(koi argument nahi)',
+  schema: z.object({}),
+  async run() {
+    const scheduled = await scheduleTodaysPrayers();
+    const times = await prayerTimesMessage();
+    return `${times}\n\n(${scheduled})`;
   },
 };

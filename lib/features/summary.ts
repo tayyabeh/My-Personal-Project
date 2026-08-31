@@ -11,6 +11,8 @@ import { log } from '../logger';
 import { messaging, templates } from '../messaging';
 import { pendingTasks, recentCompletionRate } from '../context';
 import { ROMAN_URDU } from '../lang';
+import { pickQuote, formatQuote } from './quotes';
+import { scheduleTodaysPrayers } from './prayer';
 
 /** A date offset from now, in Karachi, as YYYY-MM-DD. */
 function localDate(dayOffset = 0): string {
@@ -148,6 +150,51 @@ export async function runNightSummary(): Promise<string> {
 // Morning greeting
 // ---------------------------------------------------------------------
 
+/**
+ * Two tasks Tayyab wants on the list every single day.
+ *
+ * Added by the morning job rather than left to him to remember, which is
+ * the whole point of asking for them to be fixed.
+ */
+const DAILY_TASKS = ['Gym', 'Namaz (paanchon waqt)'];
+
+/** Add the fixed tasks, skipping any already open today. */
+async function ensureDailyTasks(): Promise<string[]> {
+  const today = localDate(0);
+
+  const { data: existing } = await db()
+    .from('tasks')
+    .select('title')
+    .eq('due_date', today);
+
+  const alreadyThere = new Set((existing ?? []).map((t) => String(t.title)));
+  const missing = DAILY_TASKS.filter((title) => !alreadyThere.has(title));
+
+  if (missing.length === 0) return [];
+
+  const { error } = await db().from('tasks').insert(
+    missing.map((title) => ({
+      title,
+      priority: 'high',
+      status: 'pending',
+      due_date: today,
+    })),
+  );
+
+  if (error) {
+    log.error('Could not add the fixed daily tasks', { error: error.message });
+    return [];
+  }
+  return missing;
+}
+
+/**
+ * The morning, in two messages.
+ *
+ * Tayyab asked for the greeting and the question to arrive separately —
+ * one to read, one to answer. A single message asking "what are your
+ * tasks" underneath a quote gets skimmed past.
+ */
 export async function runMorningGreeting(): Promise<string> {
   const [tasks, rate] = await Promise.all([pendingTasks(), recentCompletionRate()]);
 
@@ -155,27 +202,49 @@ export async function runMorningGreeting(): Promise<string> {
   // are the things being avoided.
   const rolled = tasks.filter((task) => task.rollover_count > 0);
 
+  // Quotes come from a checked list in code, never from the model. Asked
+  // for real quotes, a model invents fluent ones and misattributes them.
+  const { data: recent } = await db()
+    .from('messages')
+    .select('content')
+    .eq('direction', 'outbound')
+    .order('created_at', { ascending: false })
+    .limit(12);
+
+  const quote = pickQuote((recent ?? []).map((m) => String(m.content ?? '')));
+
   const line = await generateLine(
-    `Write one motivational opening line for the user's morning. ` +
+    `Write one short opening line for the user's morning. ` +
       (rate !== null ? `Their completion rate over the last week is ${rate}%. ` : '') +
       (rolled.length > 0
-        ? `They have been avoiding: ${rolled.map((t) => t.title).join(', ')}. Nudge them honestly about it. `
+        ? `They have been avoiding: ${rolled.map((t) => t.title).join(', ')}. Nudge them honestly. `
         : 'They have a clean slate. ') +
       `Do not congratulate them for work they have not done.`,
   );
 
-  const body =
-    `Subah bakhair! ${line}` +
-    (rolled.length > 0
-      ? `\n\nAb tak taale hue:\n${rolled
-          .map((t) => `• ${t.title} (${t.rollover_count}x)`)
-          .join('\n')}`
-      : '') +
-    `\n\nAaj kya karna hai?`;
+  // Message 1 — greeting and the quote.
+  await messaging.send(
+    `Subah bakhair!\n\n${formatQuote(quote)}\n\n${line}`,
+    templates.morningGreeting(line),
+  );
 
-  await messaging.send(body, templates.morningGreeting(line));
+  // Fixed tasks and namaz reminders, before asking what else is planned.
+  const added = await ensureDailyTasks();
+  const prayers = await scheduleTodaysPrayers();
 
-  return `morning greeting sent, ${rolled.length} rolled-over tasks mentioned`;
+  // Message 2 — the actual question.
+  const parts: string[] = [];
+  if (added.length > 0) parts.push(`Aaj ke pakke tasks laga diye: ${added.join(', ')}.`);
+  if (rolled.length > 0) {
+    parts.push(
+      `Ab tak taale hue:\n${rolled.map((t) => `• ${t.title} (${t.rollover_count}x)`).join('\n')}`,
+    );
+  }
+  parts.push('Aaj aur kya karna hai? Bata do, main yaad dilata rahunga.');
+
+  await messaging.sendText(parts.join('\n\n'));
+
+  return `morning sent (quote: ${quote.who}), ${added.length} fixed tasks, ${prayers}`;
 }
 
 // ---------------------------------------------------------------------
