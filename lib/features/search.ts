@@ -257,14 +257,28 @@ export async function searchAndAnswer(question: string): Promise<SearchAnswer> {
     .map((h, i) => `[${i + 1}] ${h.title}\n${h.snippet}\nSource: ${h.url}`)
     .join('\n\n');
 
+  // Without the date the model happily reports a two-year-old article as
+  // today's news — asked for "AI updates" it once answered with May 2024
+  // items in August 2026, sources and all, looking entirely confident.
+  const today = new Date().toLocaleDateString('en-GB', {
+    timeZone: TIMEZONE,
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
+
   const answer = await llm().complete(
     [
       {
         role: 'system',
         content:
+          `Aaj ki tareekh: ${today}.\n\n` +
           'Sawal ka jawab SIRF diye gaye search results se do. Zyada se zyada 4 jumle — ' +
           'WhatsApp pe parha jayega. Jo result istemal kiya uska number likho: [1], [2]. ' +
           'Agar results se jawab nahi milta to saaf keh do, apni yaadasht se jawab mat do.\n\n' +
+          'TAREEKH KA KHAYAL RAKHO: agar user "aaj", "latest" ya "nayi" cheez maang raha hai ' +
+          'aur results purane hain (mahine ya saal purane), to unko taaza khabar bana kar mat ' +
+          'pesh karo. Saaf batao ke ye kis waqt ki hain, ya keh do ke aaj ki nahi mili.\n\n' +
           ROMAN_URDU,
       },
       { role: 'user', content: `Sawal: ${question}\n\nSearch results:\n\n${context}` },

@@ -18,6 +18,9 @@ import { log } from '../logger';
 import { ROMAN_URDU } from '../lang';
 import type { Agent, AgentContext, AgentResult, Tool } from './types';
 
+/** How much of a tool result is carried forward into later steps. */
+const MAX_OBSERVATION_CHARS = 2500;
+
 const StepSchema = z.object({
   /**
    * One line of reasoning. Kept because it measurably improves tool
@@ -162,9 +165,18 @@ export async function runAgent(agent: Agent, ctx: AgentContext): Promise<AgentRe
 
     log.info('Agent step', { agent: agent.name, step, tool: chosen.name });
 
+    // Every later step re-sends the whole conversation, so a long tool
+    // result is paid for again on each one. Reading a full email and
+    // listing an inbox are the fat ones; capping them here is what keeps
+    // a multi-step run inside the per-minute token budget.
+    const trimmed =
+      observation.length > MAX_OBSERVATION_CHARS
+        ? `${observation.slice(0, MAX_OBSERVATION_CHARS)}\n…(baaki kaat diya)`
+        : observation;
+
     messages.push(
       { role: 'assistant', content: JSON.stringify({ thought, tool, args }) },
-      { role: 'user', content: `Tool "${chosen.name}" ka nateeja:\n${observation}` },
+      { role: 'user', content: `Tool "${chosen.name}" ka nateeja:\n${trimmed}` },
     );
   }
 

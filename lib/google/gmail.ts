@@ -119,7 +119,7 @@ export async function createDraft(to: string, subject: string, body: string): Pr
  * walk it preferring text/plain, falling back to text/html with the tags
  * stripped, because newsletters are frequently HTML-only.
  */
-export async function readMessage(id: string, maxChars = 6000): Promise<{
+export async function readMessage(id: string, maxChars = 3000): Promise<{
   from: string;
   subject: string;
   date: string;
