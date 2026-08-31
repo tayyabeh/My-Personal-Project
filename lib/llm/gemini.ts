@@ -103,7 +103,17 @@ export class GeminiProvider implements LLMProvider {
         generationConfig: {
           temperature: opts.temperature ?? 0.3,
           maxOutputTokens: opts.maxTokens ?? 1024,
-          ...(opts.json ? { responseMimeType: 'application/json' } : {}),
+          // responseMimeType is deliberately NOT set.
+          //
+          // Measured in production: a plain call returns in 1.0s, the same
+          // call with JSON mode takes 8.1s — exactly our timeout, meaning
+          // it never returned at all and Groq answered instead. Every
+          // agent step goes through this path, so it cost ~8 wasted
+          // seconds per step and no message could finish in time.
+          //
+          // Nothing is lost by dropping it: completeJson already demands
+          // JSON in the prompt, strips code fences, validates with Zod and
+          // retries with the error fed back.
         },
       }),
     });
