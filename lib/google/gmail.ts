@@ -188,3 +188,47 @@ function stripHtml(html: string): string {
     .replace(/[ \t]{2,}/g, ' ')
     .trim();
 }
+
+/**
+ * Add and remove labels on a message.
+ *
+ * Gmail models everything as labels: archiving removes INBOX, marking
+ * read removes UNREAD, trashing adds TRASH. One endpoint covers all of
+ * it, and every one of these is reversible — nothing here deletes
+ * permanently.
+ */
+export async function modifyLabels(
+  id: string,
+  add: string[] = [],
+  remove: string[] = [],
+): Promise<boolean> {
+  const token = await accessToken();
+
+  const response = await fetch(`${BASE}/messages/${id}/modify`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ addLabelIds: add, removeLabelIds: remove }),
+  });
+
+  if (!response.ok) {
+    log.warn('Gmail label change failed', {
+      id,
+      detail: (await response.text()).slice(0, 140),
+    });
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Move a message to Trash. Recoverable for 30 days in Gmail; this never
+ * deletes permanently, which is not something the assistant should do.
+ */
+export async function trashMessage(id: string): Promise<boolean> {
+  const token = await accessToken();
+  const response = await fetch(`${BASE}/messages/${id}/trash`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return response.ok;
+}

@@ -142,3 +142,80 @@ export async function deleteEvent(eventId: string): Promise<void> {
     // A stale calendar entry is not worth failing a delete over.
   }
 }
+
+/**
+ * Search events by text across a date range.
+ *
+ * Needed because the assistant could only ever touch events it had
+ * created itself — it kept their ids. Anything Tayyab added in the
+ * Google Calendar app was invisible and therefore uneditable.
+ */
+export async function findEvents(
+  query: string,
+  daysAhead = 120,
+  daysBack = 7,
+): Promise<CalendarEvent[]> {
+  const token = await accessToken();
+  const now = Date.now();
+
+  const params = new URLSearchParams({
+    q: query,
+    timeMin: new Date(now - daysBack * 86400000).toISOString(),
+    timeMax: new Date(now + daysAhead * 86400000).toISOString(),
+    singleEvents: 'true',
+    orderBy: 'startTime',
+    maxResults: '20',
+  });
+
+  const response = await fetch(`${BASE}/calendars/primary/events?${params}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) throw new Error(`Calendar search failed: ${(await response.text()).slice(0, 160)}`);
+
+  const json = (await response.json()) as {
+    items?: Array<{
+      id: string;
+      summary?: string;
+      start?: { dateTime?: string; date?: string };
+      htmlLink?: string;
+    }>;
+  };
+
+  return (json.items ?? []).map((item) => ({
+    id: item.id,
+    summary: item.summary ?? '(untitled)',
+    // All-day events carry `date` instead of `dateTime`.
+    start: item.start?.dateTime ?? item.start?.date ?? '',
+    htmlLink: item.htmlLink,
+  }));
+}
+
+/**
+ * Change an event's title and/or time. PATCH leaves untouched fields
+ * alone, so a title-only edit does not wipe the time.
+ */
+export async function updateEvent(
+  eventId: string,
+  changes: { title?: string; startsAt?: Date; durationMinutes?: number },
+): Promise<boolean> {
+  const token = await accessToken();
+
+  const body: Record<string, unknown> = {};
+  if (changes.title) body.summary = changes.title;
+
+  if (changes.startsAt) {
+    const end = new Date(changes.startsAt.getTime() + (changes.durationMinutes ?? 30) * 60000);
+    body.start = { dateTime: changes.startsAt.toISOString(), timeZone: TIMEZONE };
+    body.end = { dateTime: end.toISOString(), timeZone: TIMEZONE };
+  }
+
+  if (Object.keys(body).length === 0) return false;
+
+  const response = await fetch(`${BASE}/calendars/primary/events/${eventId}`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  return response.ok;
+}

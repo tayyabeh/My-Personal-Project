@@ -9,6 +9,7 @@
 import { z } from 'zod';
 import { searchMail, readMessage, createDraft } from '../google/gmail';
 import { sendAsVoice } from './shared-tools';
+import { archiveEmail, markEmailRead, trashEmail } from './gmail-crud';
 import type { Agent, Tool } from './types';
 
 const searchInbox: Tool<{ query: string }> = {
@@ -81,7 +82,21 @@ export const emailAgent: Agent = {
     '- Email kabhi bhejna nahi. Sirf draft bana sakte ho, aur user ko batana hai ke ' +
     'bheja nahi gaya.\n' +
     '- Jo email mein likha hai sirf wahi batao. Apni taraf se kuch mat jodo.\n' +
-    '- Awaz maangi ho to pehle emails parho, phir khulasa bana kar send_as_voice ko do.',
-  tools: [searchInbox, readEmail, draftReply, sendAsVoice] as unknown as Tool<never>[],
+    '- Awaz maangi ho to pehle emails parho, phir khulasa bana kar send_as_voice ko do.\n' +
+    '- Archive, read-mark ya trash karne se pehle search_inbox se sahi id lo. Id andaze ' +
+    'se mat banao.\n' +
+    '- trash_email SIRF tab jab Tayyab ne khud saaf kaha ho ke isko delete karo. Khud se ' +
+    'faisla kar ke kabhi kisi email ko trash mat karo, chahe wo faaltu lage.\n' +
+    '- Email bhejne ka koi tool hai hi nahi. Draft bana sakte ho, bhej nahi sakte — aur ' +
+    'user ko ye saaf batao.',
+  tools: [
+    searchInbox,
+    readEmail,
+    draftReply,
+    archiveEmail,
+    markEmailRead,
+    trashEmail,
+    sendAsVoice,
+  ] as unknown as Tool<never>[],
   maxSteps: 5,
 };
