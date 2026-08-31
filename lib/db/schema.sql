@@ -187,3 +187,6 @@ create table if not exists records (
 create index if not exists records_kind_idx on records (kind, happened_at desc);
 create index if not exists records_time_idx on records (happened_at desc);
 alter table records enable row level security;
+
+-- Tayyab's own jamaat timings; null falls back to the calculated API times
+alter table settings add column if not exists prayer_times jsonb;

@@ -47,7 +47,31 @@ export interface PrayerTime {
   at: string;
 }
 
+/**
+ * Timings Tayyab has set himself, if any.
+ *
+ * These win over the API. Aladhan returns azan times calculated from the
+ * sun; his mosque holds jamaat later — often by 20 to 40 minutes — and
+ * jamaat is the time he actually has to be there. A calculated time that
+ * is right in principle and wrong in practice is worse than useless.
+ */
+export async function customPrayerTimes(): Promise<PrayerTime[] | null> {
+  const { data } = await db().from('settings').select('prayer_times').eq('id', 1).maybeSingle();
+  const stored = data?.prayer_times as Record<string, string> | null | undefined;
+  if (!stored) return null;
+
+  const times = PRAYERS.map((name) => ({ name, at: (stored[name] ?? '').trim() })).filter((p) =>
+    /^\d{2}:\d{2}$/.test(p.at),
+  );
+
+  return times.length > 0 ? times : null;
+}
+
+/** His own times when set, otherwise the calculated ones. */
 export async function fetchPrayerTimes(): Promise<PrayerTime[]> {
+  const own = await customPrayerTimes();
+  if (own) return own;
+
   const url =
     `https://api.aladhan.com/v1/timings?latitude=${LATITUDE}&longitude=${LONGITUDE}` +
     `&method=${METHOD}`;
@@ -148,4 +172,63 @@ export async function prayerTimesMessage(): Promise<string> {
       ? `${settings.minutesBefore} minute pehle reminder aa jayega.`
       : 'Reminders abhi band hain — "namaz reminders on kar do" kaho to laga dunga.')
   );
+}
+
+/**
+ * Save Tayyab's own timings. Accepts "5:30", "05:30", "17:00".
+ *
+ * Times are stored exactly as given, in 24-hour form. Nothing is inferred
+ * about which prayer a bare hour belongs to — "5:30" for Asr means 17:30,
+ * and only the caller knows that, so the caller must say it.
+ */
+export async function saveCustomPrayerTimes(
+  times: Partial<Record<string, string>>,
+): Promise<string> {
+  const cleaned: Record<string, string> = {};
+
+  for (const name of PRAYERS) {
+    const raw = times[name];
+    if (!raw) continue;
+
+    const match = /^(\d{1,2})\s*[:.]?\s*(\d{2})$/.exec(String(raw).trim());
+    if (!match) return `FAIL: "${name}" ka waqt samajh nahi aaya ("${raw}").`;
+
+    const h = Number(match[1]);
+    const m = Number(match[2]);
+    if (h > 23 || m > 59) return `FAIL: "${raw}" theek waqt nahi hai.`;
+
+    cleaned[name] = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  }
+
+  if (Object.keys(cleaned).length === 0) return 'FAIL: koi waqt nahi mila.';
+
+  // Merge, so setting one prayer does not wipe the rest.
+  const existing = (await customPrayerTimes()) ?? [];
+  const merged: Record<string, string> = {};
+  for (const p of existing) merged[p.name] = p.at;
+  Object.assign(merged, cleaned);
+
+  const { error } = await db()
+    .from('settings')
+    .update({ prayer_times: merged, updated_at: new Date().toISOString() })
+    .eq('id', 1);
+
+  if (error) return `FAIL: ${error.message}`;
+
+  return (
+    'Tumhari timings save ho gayin:\n' +
+    PRAYERS.filter((n) => merged[n]).map((n) => `• ${n}: ${merged[n]}`).join('\n') +
+    '\n\nAb reminders inhi ke hisab se aayenge, calculated waqt ke nahi.'
+  );
+}
+
+/** Go back to the calculated times. */
+export async function clearCustomPrayerTimes(): Promise<string> {
+  const { error } = await db()
+    .from('settings')
+    .update({ prayer_times: null, updated_at: new Date().toISOString() })
+    .eq('id', 1);
+
+  if (error) return `FAIL: ${error.message}`;
+  return 'Tumhari timings hata deen. Ab Karachi ke calculated waqt istemal honge.';
 }

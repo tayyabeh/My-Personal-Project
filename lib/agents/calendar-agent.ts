@@ -15,7 +15,7 @@ import { z } from 'zod';
 import { db } from '../supabase';
 import { upcomingEvents, deleteEvent, createEvent } from '../google/calendar';
 import { extractReminder, saveReminder, humanTime } from '../features/reminders';
-import { findCalendarEvents, editCalendarEvent, removeCalendarEvent, namazTimes } from './calendar-crud';
+import { findCalendarEvents, editCalendarEvent, removeCalendarEvent, namazTimes, setNamazTimings, clearNamazTimings } from './calendar-crud';
 import type { Agent, Tool } from './types';
 
 const setReminder: Tool<{ text: string }> = {
@@ -196,6 +196,8 @@ export const calendarAgent: Agent = {
     editCalendarEvent,
     removeCalendarEvent,
     namazTimes,
+    setNamazTimings,
+    clearNamazTimings,
   ] as unknown as Tool<never>[],
   // list -> cancel/reschedule -> reply, with headroom for a retry.
   maxSteps: 5,

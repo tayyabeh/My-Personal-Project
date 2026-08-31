@@ -50,6 +50,12 @@ function systemPrompt(agent: Agent): string {
     `QAWANEEN — inko todna sab se badi ghalti hai:\n` +
     `- Jo tool tumne nahi chalaya, uska kaam hua hai ye MAT kaho. Koi wada ` +
     `mat karo ke "abhi kar deta hoon" — ya to tool chalao, ya saaf keh do ke nahi kar sakte.\n` +
+    `- "note kar li", "yaad rakh li", "save kar di", "likh li" — ye tab hi kaho jab ` +
+    `koi tool ne WAQAI likha ho. Tumhari koi yaadasht nahi hai: is jawab ke baad sab ` +
+    `bhool jaoge. Bina tool ke "yaad rakh li" kehna sab se bura jhoot hai, kyunki user ` +
+    `bharosa kar ke aage badh jata hai aur baad mein pata chalta hai kuch tha hi nahi.\n` +
+    `- Agar user kuch batata hai aur usko rakhne ka koi tool nahi, to saaf kaho ke ` +
+    `"main ye rakh nahi sakta" — aur agar koi doosra tool ye kaam kar sakta hai to wo chalao.\n` +
     `- Tool ka nateeja hi sach hai. Agar tool fail hua to user ko batao ke fail hua.\n` +
     `- Ek waqt mein ek tool. Uska jawab dekh kar agla faisla karo.\n` +
     `- Jab kaafi maloomat mil jayen to tool:null kar ke reply likho. Bewajah ` +

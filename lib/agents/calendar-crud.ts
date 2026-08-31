@@ -10,7 +10,12 @@ import { z } from 'zod';
 import { findEvents, updateEvent, deleteEvent } from '../google/calendar';
 import { extractReminder } from '../features/reminders';
 import { TIMEZONE } from '../env';
-import { scheduleTodaysPrayers, prayerTimesMessage } from '../features/prayer';
+import {
+  scheduleTodaysPrayers,
+  prayerTimesMessage,
+  saveCustomPrayerTimes,
+  clearCustomPrayerTimes,
+} from '../features/prayer';
 import type { Tool } from './types';
 
 function when(iso: string): string {
@@ -100,5 +105,50 @@ export const namazTimes: Tool<Record<string, never>> = {
     const scheduled = await scheduleTodaysPrayers();
     const times = await prayerTimesMessage();
     return `${times}\n\n(${scheduled})`;
+  },
+};
+
+/**
+ * Tayyab's own jamaat timings.
+ *
+ * The calculated times are azan times. His mosque prays later, and that
+ * is the time he actually has to be there — so what he says wins.
+ */
+export const setNamazTimings: Tool<{
+  Fajr?: string;
+  Dhuhr?: string;
+  Asr?: string;
+  Maghrib?: string;
+  Isha?: string;
+}> = {
+  name: 'set_namaz_timings',
+  description:
+    'Tayyab ki apni (jamaat ki) namaz timings save karo. Sirf wahi namazein do jo usne ' +
+    'batayi hain — baaki waise hi rehti hain. Waqt 24-hour mein do: Asr "5 baje" ka matlab ' +
+    '"17:00" hai, Fajr "5:30" ka matlab "05:30". Agar shak ho to user se poocho, andaza mat lagao.',
+  args: 'Fajr?, Dhuhr?, Asr?, Maghrib?, Isha? — sab "HH:MM" 24-hour mein',
+  schema: z.object({
+    Fajr: z.string().max(8).optional(),
+    Dhuhr: z.string().max(8).optional(),
+    Asr: z.string().max(8).optional(),
+    Maghrib: z.string().max(8).optional(),
+    Isha: z.string().max(8).optional(),
+  }),
+  async run(times) {
+    const saved = await saveCustomPrayerTimes(times as Record<string, string>);
+    // Re-schedule so the change takes effect today, not tomorrow.
+    const rescheduled = await scheduleTodaysPrayers();
+    return `${saved}\n\n(${rescheduled})`;
+  },
+};
+
+export const clearNamazTimings: Tool<Record<string, never>> = {
+  name: 'clear_namaz_timings',
+  description:
+    'Tayyab ki apni timings hata do aur wapas Karachi ke calculated waqt pe aa jao.',
+  args: '(koi argument nahi)',
+  schema: z.object({}),
+  async run() {
+    return clearCustomPrayerTimes();
   },
 };
