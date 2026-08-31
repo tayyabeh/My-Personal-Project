@@ -41,7 +41,7 @@ export interface MessagingAdapter {
   sendText(text: string, to?: string): Promise<void>;
 
   /** Send audio so it appears as a playable voice message. */
-  sendVoice(audio: Buffer): Promise<void>;
+  sendVoice(audio: Buffer, mimeType?: string): Promise<void>;
 
   /** Send a pre-approved template. Always allowed, any time. */
   sendTemplate(spec: TemplateSpec): Promise<void>;

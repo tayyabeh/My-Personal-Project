@@ -1,6 +1,7 @@
 import { loadDashboard } from '@/lib/dashboard-data';
 import TaskList from './TaskList';
 import MessageLog from './MessageLog';
+import { CompletionChart, ProgressRing } from './Charts';
 
 export const dynamic = 'force-dynamic';
 export const metadata = { title: 'Dashboard' };
@@ -22,58 +23,6 @@ function Card({
       {subtitle ? <p className="mt-0.5 mb-3 text-xs text-neutral-500">{subtitle}</p> : <div className="mb-3" />}
       {children}
     </section>
-  );
-}
-
-/** 30-day completion chart, drawn as plain SVG — no charting library. */
-function CompletionChart({
-  daily,
-}: {
-  daily: Array<{ log_date: string; completion_rate: number }>;
-}) {
-  if (daily.length === 0) {
-    return (
-      <p className="text-sm text-neutral-500">
-        No history yet. The first night summary will start filling this in.
-      </p>
-    );
-  }
-
-  const width = 100;
-  const height = 32;
-  const gap = 1.5;
-  const barWidth = Math.max(1, width / daily.length - gap);
-
-  return (
-    <div>
-      <svg viewBox={`0 0 ${width} ${height}`} className="h-24 w-full" preserveAspectRatio="none">
-        {daily.map((day, index) => {
-          const value = Number(day.completion_rate) || 0;
-          const barHeight = Math.max(0.6, (value / 100) * height);
-          return (
-            <rect
-              key={day.log_date}
-              x={index * (barWidth + gap)}
-              y={height - barHeight}
-              width={barWidth}
-              height={barHeight}
-              rx={0.6}
-              className={
-                value >= 70
-                  ? 'fill-emerald-500'
-                  : value >= 40
-                    ? 'fill-amber-500'
-                    : 'fill-neutral-400 dark:fill-neutral-600'
-              }
-            />
-          );
-        })}
-      </svg>
-      <div className="mt-2 flex justify-between text-xs text-neutral-500">
-        <span>{daily[0]?.log_date}</span>
-        <span>{daily[daily.length - 1]?.log_date}</span>
-      </div>
-    </div>
   );
 }
 
@@ -104,23 +53,36 @@ export default async function DashboardPage() {
         </span>
       </header>
 
-      {/* Headline numbers */}
-      <div className="mb-4 grid grid-cols-3 gap-3">
-        {[
-          { label: 'Today', value: `${doneToday}/${data.todaysTasks.length}` },
-          { label: 'Streak', value: `${data.streak}d` },
-          { label: '30-day avg', value: average === null ? '—' : `${average}%` },
-        ].map((stat) => (
-          <div
-            key={stat.label}
-            className="rounded-2xl border border-neutral-200 bg-white px-4 py-3 dark:border-neutral-800 dark:bg-neutral-900"
-          >
+      {/* Headline block */}
+      <div className="mb-4 flex items-center gap-5 rounded-2xl border border-neutral-200 bg-white p-5 dark:border-neutral-800 dark:bg-neutral-900">
+        <ProgressRing done={doneToday} total={data.todaysTasks.length} />
+        <div className="grid flex-1 grid-cols-2 gap-4">
+          <div>
             <div className="text-2xl font-semibold text-neutral-900 dark:text-neutral-100">
-              {stat.value}
+              {data.streak}
+              <span className="ml-0.5 text-base font-normal text-neutral-400">day</span>
             </div>
-            <div className="text-xs text-neutral-500">{stat.label}</div>
+            <div className="text-xs text-neutral-500">Current streak</div>
           </div>
-        ))}
+          <div>
+            <div className="text-2xl font-semibold text-neutral-900 dark:text-neutral-100">
+              {average === null ? '—' : `${average}%`}
+            </div>
+            <div className="text-xs text-neutral-500">30-day average</div>
+          </div>
+          <div>
+            <div className="text-2xl font-semibold text-neutral-900 dark:text-neutral-100">
+              {data.avoided.length}
+            </div>
+            <div className="text-xs text-neutral-500">Being avoided</div>
+          </div>
+          <div>
+            <div className="text-2xl font-semibold text-neutral-900 dark:text-neutral-100">
+              {data.reminders.length}
+            </div>
+            <div className="text-xs text-neutral-500">Reminders set</div>
+          </div>
+        </div>
       </div>
 
       <div className="space-y-4">

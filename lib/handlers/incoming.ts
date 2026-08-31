@@ -23,6 +23,11 @@ import {
 import { pendingTasks, contextSummary } from '../context';
 import { extractReminder, saveReminder, humanTime } from '../features/reminders';
 import { answerWithSources } from '../features/search';
+import { needsReply, topicDigest } from '../features/email';
+import { sendPodcast } from '../features/podcast';
+import { logExpense, monthSummary } from '../features/expenses';
+import { saveLearning } from '../features/learnings';
+import { findUrl, summariseLink } from '../features/links';
 
 /**
  * Save the inbound message, and tell the caller whether this is the
@@ -165,6 +170,55 @@ async function handleAddReminder(text: string, to: string): Promise<void> {
   await messaging.sendText(lines.join('\n'), to);
 }
 
+async function handleEmail(text: string, to: string): Promise<void> {
+  try {
+    // "what needs my reply" is a different job from "summarise my AI
+    // newsletters", so they get different prompts and different searches.
+    const wantsReplyList = /needs?\s+(my\s+)?(reply|response|answer)|reply\s+to|jawab/i.test(text);
+    const answer = wantsReplyList ? await needsReply() : await topicDigest(text);
+    await messaging.sendText(answer, to);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message === 'NOT_CONNECTED') {
+      await messaging.sendText(
+        "Your Google account isn't connected yet, so I can't read your inbox. Open the " +
+          'connect link on your dashboard to link it.',
+        to,
+      );
+      return;
+    }
+    log.error('Email feature failed', { error: message });
+    await messaging.sendText("I couldn't read your inbox just now.", to);
+  }
+}
+
+async function handleExpense(text: string, to: string): Promise<void> {
+  const result = await logExpense(text);
+  if (!result.ok) {
+    await messaging.sendText(
+      "I couldn't work out the amount. Try something like \"spent 2000 on groceries\".",
+      to,
+    );
+    return;
+  }
+  await messaging.sendText(
+    `Logged Rs ${result.amount.toLocaleString('en-PK')} — ${result.category}.`,
+    to,
+  );
+}
+
+async function handleLearning(text: string, to: string): Promise<void> {
+  const saved = await saveLearning(text);
+  if (!saved) {
+    await messaging.sendText("I couldn't quite capture that. Say it once more?", to);
+    return;
+  }
+  await messaging.sendText(
+    `Saved:\n${saved}\n\nI'll bring this back in 3 days, then a week, 2 weeks and a month.`,
+    to,
+  );
+}
+
 async function handleOther(text: string, to: string, wasVoice: boolean): Promise<void> {
   // A short, context-aware conversational reply. Kept brief on purpose —
   // long replies on WhatsApp are unpleasant to read.
@@ -230,6 +284,14 @@ export async function handleIncoming(message: IncomingMessage): Promise<void> {
     return;
   }
 
+  // A URL is a fact about the text, not a judgement, so it is detected in
+  // code rather than spent on a classification call.
+  const url = findUrl(text);
+  if (url) {
+    await messaging.sendText(await summariseLink(url), to);
+    return;
+  }
+
   const intent = await classifyIntent(text);
   log.info('Routing message', { intent });
 
@@ -248,6 +310,21 @@ export async function handleIncoming(message: IncomingMessage): Promise<void> {
       break;
     case 'list_tasks':
       await messaging.sendText(await pendingSummary(), to);
+      break;
+    case 'email':
+      await handleEmail(text, to);
+      break;
+    case 'podcast':
+      await sendPodcast(text, to);
+      break;
+    case 'log_expense':
+      await handleExpense(text, to);
+      break;
+    case 'expense_summary':
+      await messaging.sendText(await monthSummary(), to);
+      break;
+    case 'log_learning':
+      await handleLearning(text, to);
       break;
     default:
       await handleOther(text, to, message.kind === 'audio');

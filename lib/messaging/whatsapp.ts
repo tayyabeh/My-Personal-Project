@@ -123,13 +123,14 @@ export class WhatsAppAdapter implements MessagingAdapter {
   }
 
   /**
-   * Send audio so it appears as a playable voice message.
+   * Send audio as a playable message.
    *
-   * WhatsApp only renders audio inline as a voice note when it is OGG
-   * with the Opus codec. The caller does that conversion (Phase 2).
+   * OGG Opus renders as a voice-note waveform; MP3 renders as an audio
+   * player. Both play inline. We send MP3 because producing OGG Opus
+   * would mean bundling ffmpeg, which is not worth 78MB on a free plan.
    */
-  async sendVoice(audio: Buffer): Promise<void> {
-    const mediaId = await this.uploadMedia(audio, 'audio/ogg');
+  async sendVoice(audio: Buffer, mimeType = 'audio/mpeg'): Promise<void> {
+    const mediaId = await this.uploadMedia(audio, mimeType);
     await postMessage({
       messaging_product: 'whatsapp',
       recipient_type: 'individual',
@@ -148,7 +149,7 @@ export class WhatsAppAdapter implements MessagingAdapter {
     form.append(
       'file',
       new Blob([new Uint8Array(buffer)], { type: mimeType }),
-      mimeType === 'audio/ogg' ? 'voice.ogg' : 'upload.bin',
+      mimeType === 'audio/ogg' ? 'voice.ogg' : mimeType === 'audio/mpeg' ? 'voice.mp3' : 'upload.bin',
     );
 
     const response = await fetch(graphUrl(`${env.whatsappPhoneNumberId()}/media`), {
