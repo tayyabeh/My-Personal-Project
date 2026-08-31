@@ -48,5 +48,24 @@ export async function GET(request: Request): Promise<Response> {
     llmResult = `FAILED — ${(error instanceof Error ? error.message : String(error)).slice(0, 400)}`;
   }
 
-  return Response.json({ env, llm: llmResult });
+  // Which Gemini models this key can actually use. A wrong model name
+  // is invisible otherwise -- the call just fails or stalls.
+  let geminiModels: string[] | string;
+  try {
+    const key = optional('GEMINI_API_KEY');
+    const r = await fetch(
+      ,
+      { signal: AbortSignal.timeout(15_000) },
+    );
+    const j = (await r.json()) as { models?: Array<{ name?: string; supportedGenerationMethods?: string[] }> };
+    geminiModels = (j.models ?? [])
+      .filter((m) => (m.supportedGenerationMethods ?? []).includes('generateContent'))
+      .map((m) => (m.name ?? '').replace('models/', ''))
+      .filter((n) => n.includes('flash'))
+      .slice(0, 20);
+  } catch (error) {
+    geminiModels = ;
+  }
+
+  return Response.json({ env, llm: llmResult, geminiModels });
 }
