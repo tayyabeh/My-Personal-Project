@@ -100,6 +100,10 @@ async function makePlan(ctx: AgentContext) {
           '- steps khali sirf tab jab koi kaam hi na ho (salam, shukriya, haal-chaal).\n' +
           '- Pichli baat ka khayal rakho. "usme kya likha hai" jaise sawal pichle jawab ' +
           'se jurte hain.\n' +
+          '- Chhote jawab jaise "haan", "ok krdo", "kar do", "theek hai" akele bemani ' +
+          'hote hain — inka matlab pichle message se nikaalo. Agar wahan koi kaam tay ho ' +
+          'raha tha to usi agent ko bhejo. Inko gap-shap mat samjho, warna user ko jawab ' +
+          'milega ke "main kuch nahi kar sakta" jabke kaam bilkul ho sakta tha.\n' +
           '- "AI updates", "khabren", "aaj kya hua" = research. "mere inbox", "email aaya" ' +
           '= email.',
       },
