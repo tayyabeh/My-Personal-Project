@@ -8,6 +8,7 @@
  */
 import { z } from 'zod';
 import { searchMail, readMessage, createDraft } from '../google/gmail';
+import { sendAsVoice } from './shared-tools';
 import type { Agent, Tool } from './types';
 
 const searchInbox: Tool<{ query: string }> = {
@@ -79,7 +80,8 @@ export const emailAgent: Agent = {
     '- Agar sirf khulasa chahiye ("aaj kya kya aaya"), to search_inbox kaafi hai.\n' +
     '- Email kabhi bhejna nahi. Sirf draft bana sakte ho, aur user ko batana hai ke ' +
     'bheja nahi gaya.\n' +
-    '- Jo email mein likha hai sirf wahi batao. Apni taraf se kuch mat jodo.',
-  tools: [searchInbox, readEmail, draftReply] as unknown as Tool<never>[],
-  maxSteps: 4,
+    '- Jo email mein likha hai sirf wahi batao. Apni taraf se kuch mat jodo.\n' +
+    '- Awaz maangi ho to pehle emails parho, phir khulasa bana kar send_as_voice ko do.',
+  tools: [searchInbox, readEmail, draftReply, sendAsVoice] as unknown as Tool<never>[],
+  maxSteps: 5,
 };

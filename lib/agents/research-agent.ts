@@ -9,6 +9,7 @@
 import { z } from 'zod';
 import { answerWithSources } from '../features/search';
 import { summariseLink } from '../features/links';
+import { sendAsVoice } from './shared-tools';
 import type { Agent, Tool } from './types';
 
 const webSearch: Tool<{ query: string }> = {
@@ -41,7 +42,11 @@ export const researchAgent: Agent = {
   instructions:
     '- web_search ka jawab hi sach hai. Agar usmein jawab nahi mila to saaf keh do, ' +
     'apni yaadasht se jawab mat banao.\n' +
-    '- Sources zaroor saath do.',
-  tools: [webSearch, readLink] as unknown as Tool<never>[],
-  maxSteps: 3,
+    '- Sources zaroor saath do.\n' +
+    '- Agar user ne awaz maangi ho ("voice mein sunao", "bol kar batao"), to pehle ' +
+    'search karo, phir jo mila usko apne lafzon mein 150-200 lafz ka khulasa bana kar ' +
+    'send_as_voice ko do. Voice bhejne ke baad sirf ek chhoti line likho.',
+  tools: [webSearch, readLink, sendAsVoice] as unknown as Tool<never>[],
+  // search -> speak -> reply needs three, so leave headroom.
+  maxSteps: 5,
 };

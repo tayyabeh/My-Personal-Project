@@ -6,6 +6,7 @@ import { askReflection, sendBookPodcast } from '../features/podcast';
 import { bookFromRequest } from '../features/books';
 import { saveLearning } from '../features/learnings';
 import { contextSummary } from '../context';
+import { sendAsVoice } from './shared-tools';
 import type { Agent, Tool } from './types';
 
 const makePodcast: Tool<{ request: string }> = {
@@ -68,6 +69,6 @@ export const coachAgent: Agent = {
     '- User ne apna haal bata diya (pareshan hoon, focus nahi hota)? make_podcast chalao ' +
     'aur wahi baat request mein daalo.\n' +
     '- Jhooti tareef mat karo. Jo my_progress bataye wahi sach hai.',
-  tools: [makePodcast, askHowTheyAre, noteLearning, howAmIDoing] as unknown as Tool<never>[],
+  tools: [makePodcast, askHowTheyAre, noteLearning, howAmIDoing, sendAsVoice] as unknown as Tool<never>[],
   maxSteps: 3,
 };
