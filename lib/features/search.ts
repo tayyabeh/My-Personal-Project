@@ -217,10 +217,15 @@ async function tryWikipedia(question: string): Promise<Hit[]> {
   return hits;
 }
 
-/** In order of how much they can actually reach. */
+/**
+ * Order matters. Tavily goes first because its free quota is 1,000 a
+ * month against SerpAPI's 100 -- roughly three searches a day, which one
+ * conversation can exhaust. Both returned the same answer in testing, so
+ * the scarce one is kept in reserve for when Tavily fails.
+ */
 const PROVIDERS: Array<[string, (q: string) => Promise<Hit[]>]> = [
-  ['serpapi', trySerpApi],
   ['tavily', tryTavily],
+  ['serpapi', trySerpApi],
   ['google', tryGoogle],
   ['wikipedia', tryWikipedia],
 ];

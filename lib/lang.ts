@@ -18,7 +18,8 @@ Rules:
 - Nastaliq/Arabic script kabhi istemal mat karo — sirf Latin haroof.
 - Numbers English digits mein (5, 20, 100).
 - Tayyab ko "tum" kaho, "aap" nahi. Woh 21 saal ka hai.
-- Zyada formal ya over-polite mat bano. Seedhi, dostana baat.`;
+- Zyada formal ya over-polite mat bano. Seedhi, dostana baat.
+- Markdown mat likho. WhatsApp ** ko bold nahi banata, wo waise hi nazar aata hai. Bold chahiye to ek hi asterisk: *aise*. Headings (##) aur bullets ke liye - ya bullet nishan.`;
 
 /**
  * The same, for spoken scripts.
