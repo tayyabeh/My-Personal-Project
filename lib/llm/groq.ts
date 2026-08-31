@@ -17,9 +17,16 @@ import {
 const BASE_URL = 'https://api.groq.com/openai/v1';
 const MAX_ATTEMPTS = 4;
 
-/** Ceiling on one attempt, and on all retries together. */
-const REQUEST_TIMEOUT_MS = 20_000;
-const TOTAL_BUDGET_MS = 45_000;
+/**
+ * Ceiling on one attempt, and on all retries together.
+ *
+ * Both are deliberately small. A message costs several sequential calls,
+ * and Vercel kills the function at 60 seconds — so a 45-second retry
+ * budget inside one call could consume the entire request on its own and
+ * guarantee the timeout it was meant to survive.
+ */
+const REQUEST_TIMEOUT_MS = 8_000;
+const TOTAL_BUDGET_MS = 16_000;
 
 /** Wait, but never longer than Groq's own suggested retry delay. */
 function sleep(ms: number): Promise<void> {

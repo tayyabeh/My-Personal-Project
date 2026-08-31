@@ -26,6 +26,15 @@ export interface AgentContext {
    * user is not left staring at silence.
    */
   say(text: string): Promise<void>;
+
+  /**
+   * Epoch ms after which no new work should start.
+   *
+   * Vercel kills the function at 60 seconds. Without a deadline the loop
+   * kept starting steps until it was killed mid-flight, which sent
+   * nothing at all — the user saw silence rather than a partial answer.
+   */
+  deadline?: number;
 }
 
 export interface Turn {

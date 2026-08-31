@@ -29,8 +29,18 @@ import { runAgent } from './loop';
 import type { AgentContext, AgentResult } from './types';
 
 /** Stop starting new agents after this much elapsed. */
-const BUDGET_MS = 38_000;
+const BUDGET_MS = 30_000;
 const MAX_AGENTS = 3;
+
+/**
+ * Everything must finish inside this, including sending the reply.
+ *
+ * Vercel kills the function at 60 seconds. Before this existed the
+ * pipeline simply ran until it was killed, and a killed function sends
+ * nothing — the user saw silence rather than a partial answer, which is
+ * indistinguishable from being ignored.
+ */
+const HARD_DEADLINE_MS = 45_000;
 
 const PlanSchema = z.object({
   reason: z.string().max(300).default(''),
@@ -168,6 +178,7 @@ export async function handle(ctx: AgentContext): Promise<AgentResult> {
 
     const result = await runAgent(agent, {
       ...ctx,
+      deadline: started + HARD_DEADLINE_MS,
       input: `${carried}Ab tumhara kaam: ${step.task}\n\n(User ka asal message: "${ctx.input}")`,
     });
 

@@ -72,6 +72,13 @@ export async function runAgent(agent: Agent, ctx: AgentContext): Promise<AgentRe
   ];
 
   for (let step = 1; step <= maxSteps; step++) {
+    // Out of time. Answer with what has been gathered rather than
+    // starting a step that will be killed half-finished.
+    if (ctx.deadline && Date.now() > ctx.deadline) {
+      log.warn('Agent stopped on deadline', { agent: agent.name, step, steps });
+      break;
+    }
+
     const result = await completeJson(StepSchema, messages, {
       temperature: 0.2,
       maxTokens: 900,
@@ -140,8 +147,20 @@ export async function runAgent(agent: Agent, ctx: AgentContext): Promise<AgentRe
     );
   }
 
-  // Out of steps. Ask for a final answer using whatever was gathered,
-  // rather than returning nothing.
+  // Out of steps or out of time. Summarising costs one more model call,
+  // so only make it if there is room — otherwise say plainly what ran.
+  const outOfTime = ctx.deadline !== undefined && Date.now() > ctx.deadline - 6_000;
+
+  if (outOfTime) {
+    return {
+      reply:
+        steps.length > 0
+          ? `Ye kar diya: ${steps.join(', ')}. Baaki poora nahi kar paya, dobara bolo.`
+          : 'Itni der mein jawab nahi bana paya. Dobara bhejo?',
+      steps,
+    };
+  }
+
   messages.push({
     role: 'user',
     content:

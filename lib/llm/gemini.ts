@@ -32,8 +32,13 @@ const BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
  * function at 60 seconds, which produced total silence: no reply, no
  * error, and the fallback never ran because the first call never
  * finished. A timeout turns that into a fast, catchable failure.
+ *
+ * Kept short because one message costs several calls — a planner call
+ * plus a call per agent step. At 20 seconds each, two slow calls were
+ * enough to spend the function's whole life; the pipeline timed out even
+ * though a single call answered in 1.3 seconds.
  */
-const REQUEST_TIMEOUT_MS = 20_000;
+const REQUEST_TIMEOUT_MS = 8_000;
 
 interface GeminiTurn {
   role: 'user' | 'model';
