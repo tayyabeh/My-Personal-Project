@@ -18,6 +18,7 @@ import { researchAgent } from './research-agent';
 import { coachAgent } from './coach-agent';
 import { moneyAgent } from './money-agent';
 import { settingsAgent } from './settings-agent';
+import { recordsAgent } from './records-agent';
 
 export const AGENTS: Agent[] = [
   emailAgent,
@@ -27,6 +28,7 @@ export const AGENTS: Agent[] = [
   coachAgent,
   moneyAgent,
   settingsAgent,
+  recordsAgent,
 ];
 
 export function findAgent(name: string): Agent | undefined {

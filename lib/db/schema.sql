@@ -175,3 +175,15 @@ alter table job_runs enable row level security;
 alter table settings add column if not exists daily_tasks text[] not null default '{Gym,"Namaz (paanchon waqt)"}';
 alter table settings add column if not exists namaz_reminders boolean not null default true;
 alter table settings add column if not exists namaz_minutes_before integer not null default 15;
+
+-- General-purpose store so new kinds of data need no schema change
+create table if not exists records (
+  id uuid primary key default gen_random_uuid(),
+  kind text not null,
+  data jsonb not null default '{}'::jsonb,
+  happened_at timestamptz not null default now(),
+  created_at timestamptz not null default now()
+);
+create index if not exists records_kind_idx on records (kind, happened_at desc);
+create index if not exists records_time_idx on records (happened_at desc);
+alter table records enable row level security;
