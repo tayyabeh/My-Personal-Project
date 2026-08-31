@@ -102,7 +102,14 @@ export class GeminiProvider implements LLMProvider {
         ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}),
         generationConfig: {
           temperature: opts.temperature ?? 0.3,
-          maxOutputTokens: opts.maxTokens ?? 1024,
+          // Gemini 3.x models think before answering, and those thinking
+          // tokens come out of maxOutputTokens. On a long agent prompt the
+          // whole budget went to thinking, the text came back empty, and
+          // the call fell through to Groq — straight into its rate limit.
+          // We do our own reasoning in the agent loop, so buy none here.
+          thinkingConfig: { thinkingBudget: 0 },
+          // Floor it regardless, so a small cap cannot starve the answer.
+          maxOutputTokens: Math.max(opts.maxTokens ?? 1024, 1024),
           // responseMimeType is deliberately NOT set.
           //
           // Measured in production: a plain call returns in 1.0s, the same
