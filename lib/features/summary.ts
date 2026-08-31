@@ -151,16 +151,23 @@ export async function runNightSummary(): Promise<string> {
 // ---------------------------------------------------------------------
 
 /**
- * Two tasks Tayyab wants on the list every single day.
+ * The tasks added automatically every morning.
  *
- * Added by the morning job rather than left to him to remember, which is
- * the whole point of asking for them to be fixed.
+ * Read from settings rather than hard-coded, so Tayyab can change them by
+ * saying so on WhatsApp instead of needing a code change. Falls back to
+ * the original pair only if the setting is missing entirely.
  */
-const DAILY_TASKS = ['Gym', 'Namaz (paanchon waqt)'];
+async function dailyTaskList(): Promise<string[]> {
+  const { data } = await db().from('settings').select('daily_tasks').eq('id', 1).maybeSingle();
+  const list = data?.daily_tasks as string[] | null | undefined;
+  return list ?? ['Gym', 'Namaz (paanchon waqt)'];
+}
 
 /** Add the fixed tasks, skipping any already open today. */
 async function ensureDailyTasks(): Promise<string[]> {
   const today = localDate(0);
+  const wanted = await dailyTaskList();
+  if (wanted.length === 0) return [];
 
   const { data: existing } = await db()
     .from('tasks')
@@ -168,7 +175,7 @@ async function ensureDailyTasks(): Promise<string[]> {
     .eq('due_date', today);
 
   const alreadyThere = new Set((existing ?? []).map((t) => String(t.title)));
-  const missing = DAILY_TASKS.filter((title) => !alreadyThere.has(title));
+  const missing = wanted.filter((title) => !alreadyThere.has(title));
 
   if (missing.length === 0) return [];
 

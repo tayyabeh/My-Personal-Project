@@ -21,7 +21,22 @@ const LONGITUDE = 67.1861;
 /** University of Islamic Sciences, Karachi. */
 const METHOD = 1;
 
-const MINUTES_BEFORE = 15;
+/** Default warning window; the stored setting wins when present. */
+const DEFAULT_MINUTES_BEFORE = 15;
+
+/** Whether reminders are wanted, and how much warning. From settings. */
+async function prayerSettings(): Promise<{ on: boolean; minutesBefore: number }> {
+  const { data } = await db()
+    .from('settings')
+    .select('namaz_reminders, namaz_minutes_before')
+    .eq('id', 1)
+    .maybeSingle();
+
+  return {
+    on: data?.namaz_reminders ?? true,
+    minutesBefore: Number(data?.namaz_minutes_before ?? DEFAULT_MINUTES_BEFORE),
+  };
+}
 
 /** The five daily prayers, in order. Sunrise and midnight are not prayers. */
 const PRAYERS = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'] as const;
@@ -73,6 +88,9 @@ function karachiTime(hhmm: string): Date {
  * so running this twice in a day cannot produce duplicates.
  */
 export async function scheduleTodaysPrayers(): Promise<string> {
+  const settings = await prayerSettings();
+  if (!settings.on) return 'namaz reminders are switched off';
+
   let prayers: PrayerTime[];
   try {
     prayers = await fetchPrayerTimes();
@@ -98,7 +116,7 @@ export async function scheduleTodaysPrayers(): Promise<string> {
 
   for (const prayer of prayers) {
     const prayerAt = karachiTime(prayer.at);
-    const remindAt = new Date(prayerAt.getTime() - MINUTES_BEFORE * 60_000);
+    const remindAt = new Date(prayerAt.getTime() - settings.minutesBefore * 60_000);
 
     // A reminder for a prayer that has already passed is just noise.
     if (remindAt.getTime() <= now) continue;
@@ -120,10 +138,14 @@ export async function scheduleTodaysPrayers(): Promise<string> {
 
 /** Today's times, formatted for a message. */
 export async function prayerTimesMessage(): Promise<string> {
-  const prayers = await fetchPrayerTimes();
+  const [prayers, settings] = await Promise.all([fetchPrayerTimes(), prayerSettings()]);
+
   return (
     'Aaj Karachi ki namaz timings:\n' +
     prayers.map((p) => `• ${p.name}: ${p.at}`).join('\n') +
-    `\n\n${MINUTES_BEFORE} minute pehle reminder aa jayega.`
+    '\n\n' +
+    (settings.on
+      ? `${settings.minutesBefore} minute pehle reminder aa jayega.`
+      : 'Reminders abhi band hain — "namaz reminders on kar do" kaho to laga dunga.')
   );
 }

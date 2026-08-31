@@ -170,3 +170,8 @@ create table if not exists job_runs (
   last_run_at timestamptz not null default now()
 );
 alter table job_runs enable row level security;
+
+-- Things that used to be hard-coded, now editable from WhatsApp
+alter table settings add column if not exists daily_tasks text[] not null default '{Gym,"Namaz (paanchon waqt)"}';
+alter table settings add column if not exists namaz_reminders boolean not null default true;
+alter table settings add column if not exists namaz_minutes_before integer not null default 15;

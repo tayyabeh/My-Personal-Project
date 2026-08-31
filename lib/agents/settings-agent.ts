@@ -131,10 +131,85 @@ const setWeeklyDay: Tool<{ day: number }> = {
   },
 };
 
+// ---------------------------------------------------------------------
+// Things that used to be hard-coded
+// ---------------------------------------------------------------------
+
+const showDailyTasks: Tool<Record<string, never>> = {
+  name: 'show_daily_tasks',
+  description: 'Wo tasks dikhao jo har subah khud ba khud lag jate hain.',
+  args: '(koi argument nahi)',
+  schema: z.object({}),
+  async run() {
+    const { data, error } = await db()
+      .from('settings')
+      .select('daily_tasks, namaz_reminders, namaz_minutes_before')
+      .eq('id', 1)
+      .maybeSingle();
+
+    if (error || !data) return `FAIL: ${error?.message ?? 'settings nahi milin'}`;
+
+    const list = (data.daily_tasks as string[] | null) ?? [];
+    return [
+      list.length > 0 ? `Roz ke pakke tasks:\n${list.map((t) => `• ${t}`).join('\n')}` : 'Koi pakka task nahi.',
+      `Namaz reminders: ${data.namaz_reminders ? 'on' : 'off'} (${data.namaz_minutes_before} minute pehle)`,
+    ].join('\n\n');
+  },
+};
+
+const setDailyTasks: Tool<{ tasks: string[] }> = {
+  name: 'set_daily_tasks',
+  description:
+    'Roz khud lagne wale tasks ki poori nayi list do. Ye purani list ko badal deti hai, usme ' +
+    'jorti nahi — kuch add karna ho to pehle show_daily_tasks se purani list lo. Khali list ' +
+    'dene se ye feature band ho jayega.',
+  args: 'tasks: string[]  (jaise ["Gym","Namaz (paanchon waqt)"])',
+  schema: z.object({ tasks: z.array(z.string().min(1).max(120)).max(10) }),
+  async run({ tasks }) {
+    const cleaned = tasks.map((t) => t.trim()).filter(Boolean);
+
+    const { error } = await db()
+      .from('settings')
+      .update({ daily_tasks: cleaned, updated_at: new Date().toISOString() })
+      .eq('id', 1);
+
+    if (error) return `FAIL: ${error.message}`;
+    return cleaned.length === 0
+      ? 'Roz ke pakke tasks band kar diye.'
+      : `Roz ye tasks lagenge: ${cleaned.join(', ')}. Kal subah se.`;
+  },
+};
+
+const setNamazReminders: Tool<{ on: boolean; minutesBefore?: number }> = {
+  name: 'set_namaz_reminders',
+  description:
+    'Namaz ke reminders on ya off karo, aur chaho to kitne minute pehle aayen wo bhi badlo.',
+  args: 'on: boolean, minutesBefore?: number',
+  schema: z.object({
+    on: z.boolean(),
+    minutesBefore: z.number().int().min(1).max(120).optional(),
+  }),
+  async run({ on, minutesBefore }) {
+    const update: Record<string, unknown> = {
+      namaz_reminders: on,
+      updated_at: new Date().toISOString(),
+    };
+    if (minutesBefore !== undefined) update.namaz_minutes_before = minutesBefore;
+
+    const { error } = await db().from('settings').update(update).eq('id', 1);
+    if (error) return `FAIL: ${error.message}`;
+
+    return on
+      ? `Namaz reminders on hain${minutesBefore ? `, ${minutesBefore} minute pehle` : ''}.`
+      : 'Namaz reminders band kar diye.';
+  },
+};
+
 export const settingsAgent: Agent = {
   name: 'settings',
   description:
     'Messages ke waqt badalta hai: morning greeting, night summary, din ke check-ins, ' +
+    'roz khud lagne wale tasks (gym, namaz), namaz reminders on/off, ' +
     'weekly review ka din aur waqt, learning reminder. Waqt dikhata bhi hai.',
   instructions:
     '- Waqt badalne se pehle agar shak ho to show_schedule chala kar dekh lo abhi kya hai.\n' +
@@ -142,6 +217,14 @@ export const settingsAgent: Agent = {
     '- Check-ins ki poori nayi list deni hoti hai, ek waqt jorna nahi hota. Agar user ek ' +
     'waqt jorna chahta hai to pehle show_schedule se purani list lo, usme jodo, phir set karo.\n' +
     '- Jo tool bataye wahi user ko batao. Waqt badla hai ye tab kaho jab tool ne haan kaha ho.',
-  tools: [showSchedule, setTime, setCheckins, setWeeklyDay] as unknown as Tool<never>[],
+  tools: [
+    showSchedule,
+    setTime,
+    setCheckins,
+    setWeeklyDay,
+    showDailyTasks,
+    setDailyTasks,
+    setNamazReminders,
+  ] as unknown as Tool<never>[],
   maxSteps: 4,
 };
