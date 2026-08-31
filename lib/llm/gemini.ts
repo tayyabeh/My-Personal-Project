@@ -25,6 +25,16 @@ import type { CompleteOptions, LLMProvider, Message } from './types';
 
 const BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
 
+/**
+ * Hard ceiling on one request.
+ *
+ * Without this a stalled connection hangs until Vercel kills the whole
+ * function at 60 seconds, which produced total silence: no reply, no
+ * error, and the fallback never ran because the first call never
+ * finished. A timeout turns that into a fast, catchable failure.
+ */
+const REQUEST_TIMEOUT_MS = 20_000;
+
 interface GeminiTurn {
   role: 'user' | 'model';
   parts: Array<{ text: string }>;
@@ -81,6 +91,7 @@ export class GeminiProvider implements LLMProvider {
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       body: JSON.stringify({
         contents,
         ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}),

@@ -17,6 +17,10 @@ import {
 const BASE_URL = 'https://api.groq.com/openai/v1';
 const MAX_ATTEMPTS = 4;
 
+/** Ceiling on one attempt, and on all retries together. */
+const REQUEST_TIMEOUT_MS = 20_000;
+const TOTAL_BUDGET_MS = 45_000;
+
 /** Wait, but never longer than Groq's own suggested retry delay. */
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -29,9 +33,18 @@ function sleep(ms: number): Promise<void> {
  */
 async function callWithRetry(path: string, init: RequestInit): Promise<Response> {
   let lastDetail = '';
+  const started = Date.now();
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    const response = await fetch(`${BASE_URL}${path}`, init);
+    // Backing off past the function's own lifetime just guarantees a kill.
+    if (Date.now() - started > TOTAL_BUDGET_MS) {
+      throw new RateLimitedError(`Groq retries exceeded ${TOTAL_BUDGET_MS}ms: ${lastDetail}`);
+    }
+
+    const response = await fetch(`${BASE_URL}${path}`, {
+      ...init,
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
 
     if (response.ok) return response;
 
