@@ -79,10 +79,16 @@ export async function runAgent(agent: Agent, ctx: AgentContext): Promise<AgentRe
       break;
     }
 
+    const thinkStarted = Date.now();
     const result = await completeJson(StepSchema, messages, {
       temperature: 0.2,
       maxTokens: 900,
     });
+    const thinkMs = Date.now() - thinkStarted;
+
+    // Timings ride along in `steps` so a slow run can be diagnosed from
+    // the outside; Vercel's logs are not reachable from the tooling here.
+    steps.push(`think:${thinkMs}ms`);
 
     if (!result.ok) {
       log.error('Agent step unparseable', { agent: agent.name, step, error: result.error });
@@ -126,9 +132,10 @@ export async function runAgent(agent: Agent, ctx: AgentContext): Promise<AgentRe
         'Galat arguments: ' +
         parsed.error.issues.map((i) => `${i.path.join('.') || 'root'}: ${i.message}`).join('; ');
     } else {
+      const toolStarted = Date.now();
       try {
         observation = await (chosen as Tool<unknown>).run(parsed.data, ctx);
-        steps.push(chosen.name);
+        steps.push(`${chosen.name}:${Date.now() - toolStarted}ms`);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         log.error('Tool threw', { agent: agent.name, tool: chosen.name, error: message });

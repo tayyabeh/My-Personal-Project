@@ -75,15 +75,23 @@ async function probeAgent(input: string) {
   }
 
   try {
-    const result = await handle({
-      to: '923273844643',
-      input,
-      history: [],
-      // Capture interim messages instead of sending them.
-      say: async (text: string) => {
-        sent.push(text.slice(0, 80));
-      },
-    });
+    // Race so the probe reports what it learned instead of dying with it.
+    // Losing the diagnosis to the very timeout being diagnosed is exactly
+    // how this stayed opaque for so long.
+    const result = await Promise.race([
+      handle({
+        to: '923273844643',
+        input,
+        history: [],
+        // Capture interim messages instead of sending them.
+        say: async (text: string) => {
+          sent.push(text.slice(0, 80));
+        },
+      }),
+      new Promise<{ reply: string; steps: string[] }>((resolve) =>
+        setTimeout(() => resolve({ reply: '(probe timed out at 35s)', steps: ['PROBE-TIMEOUT'] }), 35_000),
+      ),
+    ]);
 
     return {
       ok: true,
