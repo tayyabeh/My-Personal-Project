@@ -11,16 +11,47 @@
  *
  * Groq is already our provider for chat and transcription, so this needs
  * no new account, key, or card. It does need the model's terms accepted
- * once in the Groq console — the error message below says so plainly
- * rather than failing mysteriously.
+ * once in the Groq console — the error below says so plainly rather than
+ * failing mysteriously.
  *
- * Groq only returns WAV, which WhatsApp does not accept (it takes mp3,
+ * Groq returns WAV only, and WhatsApp does not accept WAV (it takes mp3,
  * aac, mp4 and ogg-opus). So the WAV is re-encoded to MP3 with lamejs, a
- * pure-JavaScript encoder — no native binary, no install scripts, nothing
+ * pure-JavaScript encoder: no native binary, no install scripts, nothing
  * for Vercel to choke on. MP3 plays inline as an audio message; a
  * voice-note waveform would need OGG Opus and therefore ffmpeg's 78MB
  * binary, which is not worth it for a cosmetic difference.
  */
+import { env } from './env';
+import { log } from './logger';
+
+const TTS_MODEL = 'canopylabs/orpheus-v1-english';
+
+/** The voices this model actually accepts. Anything else is a 400. */
+export const VOICES = {
+  autumn: 'autumn',
+  diana: 'diana',
+  hannah: 'hannah',
+  austin: 'austin',
+  daniel: 'daniel',
+  troy: 'troy',
+} as const;
+
+const DEFAULT_VOICE: string = VOICES.diana;
+
+export class TermsNotAcceptedError extends Error {
+  constructor() {
+    super(
+      'The speech model needs its terms accepted once, at ' +
+        'https://console.groq.com/playground?model=canopylabs%2Forpheus-v1-english',
+    );
+    this.name = 'TermsNotAcceptedError';
+  }
+}
+
+// ---------------------------------------------------------------------
+// MP3 encoding
+// ---------------------------------------------------------------------
+
 type Encoder = {
   encodeBuffer(left: Int16Array, right?: Int16Array): Uint8Array;
   flush(): Uint8Array;
@@ -46,38 +77,20 @@ async function loadEncoder(): Promise<EncoderCtor> {
   return ctor;
 }
 
-/** Synthesise speech. Returns MP3 bytes. */
-export async function speak(text: string, voice: string = DEFAULT_VOICE): Promise<Buffer> {
-  const response = await fetch('https://api.groq.com/openai/v1/audio/speech', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${env.groqApiKey()}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: TTS_MODEL,
-      voice,
-      input: text,
-      // WAV is the only format this model offers.
-      response_format: 'wav',
-    }),
-  });
-
-  if (!response.ok) {
-    const detail = await response.text();
-    if (detail.includes('requires terms acceptance')) throw new TermsNotAcceptedError();
-    throw new Error(`Speech generation failed (HTTP ${response.status}): ${detail.slice(0, 300)}`);
-  }
-
-  return await wavToMp3(Buffer.from(await response.arrayBuffer()));
+/** Pull one channel out of interleaved stereo samples. */
+function deinterleave(samples: Int16Array, channel: number): Int16Array {
+  const out = new Int16Array(Math.floor(samples.length / 2));
+  for (let i = 0; i < out.length; i++) out[i] = samples[i * 2 + channel];
+  return out;
 }
 
 /**
  * Re-encode 16-bit PCM WAV to MP3.
  *
- * Walks the RIFF chunks rather than assuming a 44-byte header, because
- * WAV files often carry LIST or fact chunks before the data and a fixed
- * offset would slice audio into the middle of a sample.
+ * Walks the RIFF chunks rather than assuming a 44-byte header. Groq's WAV
+ * puts its data chunk at byte 78 and declares a length of 0xFFFFFFFF
+ * (unknown, because it streams), so a fixed offset would slice audio
+ * mid-sample and a trusted length would read past the buffer.
  */
 async function wavToMp3(wav: Buffer): Promise<Buffer> {
   if (wav.subarray(0, 4).toString('ascii') !== 'RIFF') {
@@ -107,11 +120,9 @@ async function wavToMp3(wav: Buffer): Promise<Buffer> {
 
   if (dataStart < 0) throw new Error('WAV file had no data chunk');
 
+  const usable = Math.min(dataLength, wav.length - dataStart);
   const pcm = new Int16Array(
-    wav.buffer.slice(
-      wav.byteOffset + dataStart,
-      wav.byteOffset + dataStart + Math.min(dataLength, wav.length - dataStart),
-    ),
+    wav.buffer.slice(wav.byteOffset + dataStart, wav.byteOffset + dataStart + usable),
   );
 
   const Ctor = await loadEncoder();
@@ -134,11 +145,34 @@ async function wavToMp3(wav: Buffer): Promise<Buffer> {
   return Buffer.concat(output);
 }
 
-/** Pull one channel out of interleaved stereo samples. */
-function deinterleave(samples: Int16Array, channel: number): Int16Array {
-  const out = new Int16Array(Math.floor(samples.length / 2));
-  for (let i = 0; i < out.length; i++) out[i] = samples[i * 2 + channel];
-  return out;
+// ---------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------
+
+/** Synthesise speech. Returns MP3 bytes. */
+export async function speak(text: string, voice: string = DEFAULT_VOICE): Promise<Buffer> {
+  const response = await fetch('https://api.groq.com/openai/v1/audio/speech', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${env.groqApiKey()}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: TTS_MODEL,
+      voice,
+      input: text,
+      // WAV is the only format this model offers.
+      response_format: 'wav',
+    }),
+  });
+
+  if (!response.ok) {
+    const detail = await response.text();
+    if (detail.includes('requires terms acceptance')) throw new TermsNotAcceptedError();
+    throw new Error(`Speech generation failed (HTTP ${response.status}): ${detail.slice(0, 300)}`);
+  }
+
+  return await wavToMp3(Buffer.from(await response.arrayBuffer()));
 }
 
 /** Same, but reports why it failed instead of throwing. */
