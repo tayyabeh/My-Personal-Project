@@ -91,9 +91,17 @@ export async function runAgent(agent: Agent, ctx: AgentContext): Promise<AgentRe
     steps.push(`think:${thinkMs}ms`);
 
     if (!result.ok) {
-      log.error('Agent step unparseable', { agent: agent.name, step, error: result.error });
+      log.error('Agent step failed', { agent: agent.name, step, error: result.error });
+
+      // A spent quota is not a misunderstanding. Saying "samajh nahi
+      // aaya" for it sends the user off rephrasing a message that was
+      // perfectly clear, which is worse than saying nothing useful.
+      const rateLimited = /rate limit|429|quota|exceeded/i.test(result.error);
+
       return {
-        reply: 'Samajh nahi aaya. Thora aur wazeh bolo?',
+        reply: rateLimited
+          ? 'Abhi AI ki limit khatam ho gayi hai (roz ki had). Thori der baad ya kal dobara bolo.'
+          : 'Samajh nahi aaya. Thora aur wazeh bolo?',
         steps,
       };
     }
