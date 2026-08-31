@@ -10,6 +10,7 @@ import { llm } from '../llm';
 import { log } from '../logger';
 import { messaging, templates } from '../messaging';
 import { pendingTasks, recentCompletionRate } from '../context';
+import { ROMAN_URDU } from '../lang';
 
 /** A date offset from now, in Karachi, as YYYY-MM-DD. */
 function localDate(dayOffset = 0): string {
@@ -56,9 +57,9 @@ async function generateLine(prompt: string): Promise<string> {
         {
           role: 'system',
           content:
-            'You write a single short line for a personal assistant. One sentence, ' +
-            'maximum 20 words. Direct and honest, never gushing, no emoji, no exclamation ' +
-            'marks unless genuinely warranted. Do not invent facts beyond what you are told.',
+            'Ek chhoti si line likho, personal assistant ke liye. Ek jumla, 20 lafz se ' +
+            'kam. Seedhi aur sachi baat, chaploosi nahi, koi emoji nahi. Jo bataya gaya ' +
+            'hai us se bahar koi baat mat banao.\n\n' + ROMAN_URDU,
         },
         { role: 'user', content: prompt },
       ],
@@ -131,10 +132,10 @@ export async function runNightSummary(): Promise<string> {
 
   const body =
     planned === 0
-      ? `No tasks logged today. ${line}`
-      : `Today: ${completed} of ${planned} done (${rate}%).` +
+      ? `Aaj koi task log nahi hua. ${line}`
+      : `Aaj: ${planned} mein se ${completed} ho gaye (${rate}%).` +
         (unfinished.length > 0
-          ? `\n\nRolled to tomorrow:\n${unfinished.map((t) => `• ${t.title}`).join('\n')}`
+          ? `\n\nKal pe chale gaye:\n${unfinished.map((t) => `• ${t.title}`).join('\n')}`
           : '') +
         `\n\n${line}`;
 
@@ -164,13 +165,13 @@ export async function runMorningGreeting(): Promise<string> {
   );
 
   const body =
-    `Good morning! ${line}` +
+    `Subah bakhair! ${line}` +
     (rolled.length > 0
-      ? `\n\nStill carried over:\n${rolled
+      ? `\n\nAb tak taale hue:\n${rolled
           .map((t) => `• ${t.title} (${t.rollover_count}x)`)
           .join('\n')}`
       : '') +
-    `\n\nWhat are your tasks for today?`;
+    `\n\nAaj kya karna hai?`;
 
   await messaging.send(body, templates.morningGreeting(line));
 
@@ -223,7 +224,7 @@ export async function runCheckIn(): Promise<string> {
       .slice(0, 6)
       .map((t) => `• ${t.title}${t.rollover_count > 0 ? ` (${t.rollover_count}x)` : ''}`)
       .join('\n') +
-    `\n\nTell me if any of these are done.`;
+    `\n\nBatao inmein se kuch ho gaya?`;
 
   await messaging.sendText(body);
 

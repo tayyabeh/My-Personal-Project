@@ -78,7 +78,7 @@ export async function monthSummary(): Promise<string> {
     .gte('spent_on', firstOfMonth);
 
   if (error) throw new Error(error.message);
-  if (!data || data.length === 0) return 'Nothing logged this month.';
+  if (!data || data.length === 0) return 'Is mahine kuch log nahi hua.';
 
   const totals = new Map<string, number>();
   let total = 0;
@@ -93,5 +93,5 @@ export async function monthSummary(): Promise<string> {
     .sort((a, b) => b[1] - a[1])
     .map(([category, amount]) => `• ${category}: ${format(amount)}`);
 
-  return `This month: ${format(total)}\n\n${lines.join('\n')}`;
+  return `Is mahine: ${format(total)}\n\n${lines.join('\n')}`;
 }

@@ -59,8 +59,8 @@ export async function escalateUnanswered(): Promise<string> {
 
     await messaging.send(
       isLast
-        ? `Last nudge on this: ${reminder.text}. I won't ask again.`
-        : `Still waiting on this one: ${reminder.text}.`,
+        ? `Aakhri dafa pooch raha hoon: ${reminder.text}. Ab nahi poochunga.`
+        : `Ye abhi tak pending hai: ${reminder.text}.`,
       templates.reminderAlert(reminder.text),
     );
 

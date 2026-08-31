@@ -95,3 +95,50 @@ export async function upcomingEvents(hours = 24): Promise<CalendarEvent[]> {
       htmlLink: item.htmlLink,
     }));
 }
+
+/**
+ * An all-day event, used for tasks.
+ *
+ * Tasks have a due date but no time, so a timed event would be a lie —
+ * it would sit at an arbitrary hour and clutter the day view. All-day
+ * events stack neatly at the top of the date instead.
+ *
+ * Google's all-day `end.date` is EXCLUSIVE, so a single-day event ends on
+ * the following date. Passing the same date twice creates a zero-length
+ * event that does not render.
+ */
+export async function createAllDayEvent(title: string, date: string): Promise<string | null> {
+  const token = await accessToken();
+
+  const next = new Date(`${date}T00:00:00Z`);
+  next.setUTCDate(next.getUTCDate() + 1);
+  const endDate = next.toISOString().slice(0, 10);
+
+  const response = await fetch(`${BASE}/calendars/primary/events`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      summary: title,
+      start: { date },
+      end: { date: endDate },
+      transparency: 'transparent', // a task should not mark you busy
+    }),
+  });
+
+  if (!response.ok) return null;
+  const json = (await response.json()) as { id: string };
+  return json.id;
+}
+
+/** Remove an event, used when a task is deleted. Never throws. */
+export async function deleteEvent(eventId: string): Promise<void> {
+  try {
+    const token = await accessToken();
+    await fetch(`${BASE}/calendars/primary/events/${eventId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+  } catch {
+    // A stale calendar entry is not worth failing a delete over.
+  }
+}

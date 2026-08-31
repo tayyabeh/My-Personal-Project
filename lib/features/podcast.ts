@@ -1,85 +1,59 @@
 /**
- * Motivational podcasts.
+ * Book-summary podcasts.
  *
- * The point of this feature is that it is about YOU, not generic
- * encouragement. The script is written from the real numbers: what you
- * actually finished, what you keep putting off and how many times, and
- * what you have been learning. A generic pep talk would be worse than
- * nothing, so the prompt is given facts and forbidden from inventing any.
+ * Tayyab asked for these to come from books rather than be generic
+ * encouragement, and for the bot to ask what is on his mind first so the
+ * choice actually fits. So there are two entry points:
+ *
+ *   askReflection()  - "aaj kal kya soch rahe ho? kahan kamzori lagti hai?"
+ *                      then waits, using the pending-action slot.
+ *   sendBookPodcast() - summarise a book, either one he named or one
+ *                      chosen from what he just told us.
+ *
+ * The script is still grounded in his real numbers, so the book connects
+ * to his actual week rather than floating free.
  */
 import { db } from '../supabase';
-import { llm } from '../llm';
 import { log } from '../logger';
 import { messaging } from '../messaging';
 import { trySpeak } from '../tts';
 import { pendingTasks, recentCompletionRate } from '../context';
+import { bookScript, recommendBook, type BookPick } from './books';
+import { setPending } from '../state';
 
 const BUCKET = 'podcasts';
 
-/**
- * Around 180 words, which reads as 75-90 seconds.
- *
- * Shorter than the spec's two to three minutes on purpose: speech is
- * synthesised in ~420-character chunks because of the model's request
- * limit, and a 400-word script needs enough round trips to risk both the
- * rate limit and the 60-second function ceiling. A tight 90 seconds that
- * reliably arrives beats three minutes that fails.
- */
-async function writeScript(mood: string): Promise<string> {
+/** A short factual description of where he actually stands. */
+async function situation(): Promise<string> {
   const [tasks, rate] = await Promise.all([pendingTasks(), recentCompletionRate()]);
   const avoided = tasks.filter((t) => t.rollover_count > 0);
 
-  const { data: learnings } = await db()
-    .from('learnings')
-    .select('content')
-    .order('created_at', { ascending: false })
-    .limit(5);
-
-  const { data: recentDone } = await db()
-    .from('tasks')
-    .select('title')
-    .eq('status', 'done')
-    .order('completed_at', { ascending: false })
-    .limit(8);
-
-  const facts = [
-    rate !== null ? `Their completion rate over the last week is ${rate}%.` : 'No completion history yet.',
-    recentDone && recentDone.length > 0
-      ? `Recently finished: ${recentDone.map((t) => t.title).join(', ')}.`
-      : 'Nothing has been completed recently.',
+  return [
+    rate !== null ? `Completion rate pichle hafte: ${rate}%.` : 'Abhi koi history nahi.',
+    tasks.length > 0 ? `${tasks.length} task khule hain.` : 'Koi task khula nahi.',
     avoided.length > 0
-      ? `Being avoided: ${avoided.map((t) => `"${t.title}" (carried over ${t.rollover_count} times)`).join(', ')}.`
-      : 'Nothing is being repeatedly avoided.',
-    tasks.length > 0 ? `${tasks.length} task(s) currently open.` : 'Nothing is currently open.',
-    learnings && learnings.length > 0
-      ? `Things they noted learning: ${learnings.map((l) => l.content).join('; ')}.`
+      ? `Baar baar taal raha hai: ${avoided
+          .map((t) => `"${t.title}" (${t.rollover_count} dafa)`)
+          .join(', ')}.`
       : '',
-    `They said they are feeling: ${mood}.`,
   ]
     .filter(Boolean)
-    .join('\n');
+    .join(' ');
+}
 
-  return llm().complete(
-    [
-      {
-        role: 'system',
-        content:
-          'Write a spoken script for a short personal audio message, about 180 words — ' +
-          'roughly 90 seconds read aloud. Do not exceed 200 words.\n\n' +
-          'This will be SPOKEN, so: no headings, no bullet points, no markdown, no emoji, ' +
-          'no stage directions. Just flowing sentences a person would say out loud.\n\n' +
-          'It is addressed to one specific person and must be grounded in the facts below. ' +
-          'Reference their actual situation — the real task they keep putting off, by name, ' +
-          'and the real number of times. Never invent a task, a number or an achievement.\n\n' +
-          'Tone: steady and warm, like someone who knows them and is not impressed by ' +
-          'excuses but is firmly on their side. Not a hype coach. No exclamation marks. ' +
-          'Do not open with "Hey there". Acknowledge how they said they feel without ' +
-          'wallowing in it, then give them one concrete thing to do next.',
-      },
-      { role: 'user', content: `Here is their real situation:\n\n${facts}` },
-    ],
-    { temperature: 0.8, maxTokens: 1200 },
+/** Ask what is going on, and remember that we asked. */
+export async function askReflection(to?: string): Promise<string> {
+  await setPending({ type: 'awaiting_reflection', askedAt: new Date().toISOString() });
+
+  await messaging.sendText(
+    'Podcast bana deta hoon, lekin pehle do cheezein batao:\n\n' +
+      '1. Aaj kal kya soch rahe ho? Dimagh mein kya chal raha hai?\n' +
+      '2. Koi cheez hai jismein khud ko kamzor mehsoos karte ho?\n\n' +
+      'Jo bhi hai, seedha likh do — usi hisab se kitab chunoonga.',
+    to,
   );
+
+  return 'reflection question asked';
 }
 
 /** Store the audio so the dashboard can play it back later. */
@@ -101,34 +75,55 @@ async function upload(audio: Buffer): Promise<string | null> {
 }
 
 /**
- * Generate and send a podcast.
+ * Make and send the podcast.
  *
- * If speech synthesis is unavailable the script is still sent as text
- * rather than the whole thing failing — the words are the valuable part.
+ * `book` may be one he named; otherwise one is chosen from `reflection`.
+ * If speech fails the script still goes out as text — the words are the
+ * valuable part, and silence would be the worst outcome.
  */
-export async function sendPodcast(mood: string, to?: string): Promise<string> {
-  const script = await writeScript(mood);
+export async function sendBookPodcast(
+  reflection: string,
+  book: BookPick | null,
+  to?: string,
+): Promise<string> {
+  const chosen = book ?? (await recommendBook(reflection));
+
+  if (!chosen) {
+    await messaging.sendText(
+      'Kitab choose nahi kar paya. Thora aur batao — kis cheez mein phans rahe ho?',
+      to,
+    );
+    return 'no book chosen';
+  }
+
+  // Tell him what is coming; generating takes a while and silence reads
+  // as the bot having died.
+  await messaging.sendText(
+    `Theek hai. "${chosen.title}" — ${chosen.author}.` +
+      (chosen.why ? `\n\n${chosen.why}` : '') +
+      '\n\nSummary bana raha hoon, ek minute...',
+    to,
+  );
+
+  const script = await bookScript(chosen, reflection, await situation());
+  const topic = `${chosen.title} — ${chosen.author}`;
 
   const { audio, error } = await trySpeak(script);
 
   if (!audio) {
     const note =
       error === 'TERMS'
-        ? "\n\n(I couldn't record this as audio — the speech model needs its terms accepted " +
-          'once at console.groq.com. Here it is in writing.)'
-        : `\n\n(I couldn't record this as audio, so here it is in writing. Reason: ${String(
-            error,
-          ).slice(0, 150)})`;
+        ? '\n\n(Audio nahi ban saka — speech model ki terms accept karni hain console.groq.com pe.)'
+        : `\n\n(Audio nahi ban saka, is liye likh kar bhej raha hoon. Wajah: ${String(error).slice(0, 120)})`;
 
     await messaging.sendText(script + note, to);
-    await db().from('podcasts').insert({ topic: mood, script, audio_url: null });
-    return `podcast sent as text (${error})`;
+    await db().from('podcasts').insert({ topic, script, audio_url: null });
+    return `book podcast sent as text (${error})`;
   }
 
   const url = await upload(audio);
-  await db().from('podcasts').insert({ topic: mood, script, audio_url: url });
-
+  await db().from('podcasts').insert({ topic, script, audio_url: url });
   await messaging.sendVoice(audio, 'audio/mpeg');
 
-  return `podcast sent as audio (${Math.round(audio.length / 1024)}kb)`;
+  return `book podcast sent (${Math.round(audio.length / 1024)}kb): ${topic}`;
 }

@@ -18,6 +18,7 @@ import { llm } from '../llm';
 import { log } from '../logger';
 import { messaging, templates } from '../messaging';
 import { TIMEZONE } from '../env';
+import { ROMAN_URDU } from '../lang';
 
 interface WeekFacts {
   completed: string[];
@@ -120,8 +121,8 @@ export async function runWeeklyReview(): Promise<string> {
   // of invented insight.
   if (facts.created === 0 && facts.completed.length === 0 && facts.daysLogged === 0) {
     await messaging.send(
-      "Weekly review: there's nothing to review. No tasks were logged at all this week. " +
-        'If you want this to be useful, it needs something to work with.',
+      'Weekly review: review karne ko kuch hai hi nahi. Is hafte koi task log nahi hua. ' +
+        'Ye cheez kaam ki tab hai jab isko kuch data mile.',
       templates.nightSummary(0, 0, 'Nothing was logged this week.'),
     );
     return 'weekly review: no data';
@@ -148,14 +149,14 @@ export async function runWeeklyReview(): Promise<string> {
           'the person. Do not make sweeping judgements about their character, discipline or ' +
           'ability. "You cleared the easy items and left the hard one" is right; "this shows ' +
           'your inability to prioritise" is not.\n' +
-          '- No emoji. No exclamation marks. Address them as "you".',
+          '- Koi emoji nahi. Koi exclamation mark nahi.\n\n' + ROMAN_URDU,
       },
       { role: 'user', content: `Here is the week's data:\n\n${factSheet(facts)}` },
     ],
     { temperature: 0.7, maxTokens: 900 },
   );
 
-  const heading = `Weekly review — ${new Date().toLocaleDateString('en-GB', {
+  const heading = `Hafte ka review — ${new Date().toLocaleDateString('en-GB', {
     timeZone: TIMEZONE,
     day: 'numeric',
     month: 'long',

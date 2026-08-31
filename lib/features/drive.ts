@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { completeJson } from '../llm/json';
 import { llm } from '../llm';
 import { readFile, searchFiles } from '../google/drive';
+import { ROMAN_URDU } from '../lang';
 
 const TermsSchema = z.object({ terms: z.string().min(1).max(80) });
 
@@ -35,7 +36,7 @@ export async function searchDrive(request: string): Promise<string> {
   const terms = await searchTerms(request);
   const files = await searchFiles(terms, 8);
 
-  if (files.length === 0) return `Nothing in your Drive matched "${terms}".`;
+  if (files.length === 0) return `Drive mein "${terms}" se kuch nahi mila.`;
 
   // One file: summarise it. Several: list them, because guessing which one
   // they meant and summarising the wrong document wastes their time.
@@ -44,7 +45,7 @@ export async function searchDrive(request: string): Promise<string> {
     const content = await readFile(file);
 
     if (!content) {
-      return `Found "${file.name}", but it isn't a readable text file.\n${file.webViewLink ?? ''}`;
+      return `"${file.name}" mila, lekin ye readable text file nahi hai.\n${file.webViewLink ?? ''}`;
     }
 
     const summary = await llm().complete(
@@ -53,7 +54,7 @@ export async function searchDrive(request: string): Promise<string> {
           role: 'system',
           content:
             'Summarise this document for someone reading on WhatsApp. Four or five short ' +
-            'sentences. Only what the document says — never add outside knowledge. No markdown.',
+            'sentences. Sirf wahi jo document mein hai. No markdown.\n\n' + ROMAN_URDU,
         },
         { role: 'user', content: content },
       ],
@@ -68,5 +69,5 @@ export async function searchDrive(request: string): Promise<string> {
     .map((f, i) => `${i + 1}. ${f.name}`)
     .join('\n');
 
-  return `${files.length} files matched "${terms}":\n${list}\n\nName one and I'll summarise it.`;
+  return `${files.length} files mili "${terms}" ke liye:\n${list}\n\nKisi ek ka naam lo, summary bana dunga.`;
 }

@@ -2,11 +2,12 @@
  * What happens when a message arrives.
  *
  * The pipeline:
- *   save + dedupe -> (transcribe if voice) -> classify intent -> route to
- *   a focused handler -> reply with what we understood.
+ *   save + dedupe -> (transcribe if voice) -> is an answer pending? ->
+ *   classify intent -> focused handler -> reply with what we understood.
  *
- * The reply always states what was understood, so a mistake costs you a
- * two-second correction instead of silently rotting in the database.
+ * Replies are in Roman Urdu, which is how Tayyab asked to be spoken to.
+ * The reply always states what was understood, so a mistake costs a
+ * two-second correction instead of rotting silently in the database.
  */
 import { messaging, type IncomingMessage } from '../messaging';
 import { db } from '../supabase';
@@ -24,11 +25,14 @@ import { pendingTasks, contextSummary } from '../context';
 import { extractReminder, saveReminder, humanTime } from '../features/reminders';
 import { answerWithSources } from '../features/search';
 import { needsReply, topicDigest } from '../features/email';
-import { sendPodcast } from '../features/podcast';
+import { askReflection, sendBookPodcast } from '../features/podcast';
+import { bookFromRequest } from '../features/books';
 import { logExpense, monthSummary } from '../features/expenses';
 import { saveLearning } from '../features/learnings';
 import { findUrl, summariseLink } from '../features/links';
 import { searchDrive } from '../features/drive';
+import { getPending, setPending } from '../state';
+import { ROMAN_URDU } from '../lang';
 
 /**
  * Save the inbound message, and tell the caller whether this is the
@@ -77,15 +81,12 @@ async function handleAddTasks(text: string, to: string): Promise<void> {
 
   if (!result.ok) {
     log.error('Task extraction failed twice', { error: result.error });
-    await messaging.sendText(
-      "I couldn't make sense of that one. Could you say it again, a bit more slowly?",
-      to,
-    );
+    await messaging.sendText('Samajh nahi aaya. Thora aaram se dobara bolo?', to);
     return;
   }
 
   if (result.tasks.length === 0) {
-    await messaging.sendText("I didn't catch any tasks in that. What do you need to get done?", to);
+    await messaging.sendText('Ismein koi task nahi mila. Aaj kya karna hai?', to);
     return;
   }
 
@@ -94,15 +95,18 @@ async function handleAddTasks(text: string, to: string): Promise<void> {
   const confident = result.tasks.filter((task) => !task.uncertain);
   const unsure = result.tasks.filter((task) => task.uncertain);
 
-  const saved = await saveTasks(confident);
+  const { titles, onCalendar } = await saveTasks(confident);
 
   const parts: string[] = [];
-  if (saved.length > 0) {
-    parts.push(`Added ${saved.length}:\n${saved.map((title) => `• ${title}`).join('\n')}`);
+  if (titles.length > 0) {
+    parts.push(
+      `${titles.length} add kar diye:\n${titles.map((title) => `• ${title}`).join('\n')}` +
+        (onCalendar > 0 ? '\n\nCalendar pe bhi laga diye.' : ''),
+    );
   }
   if (unsure.length > 0) {
     parts.push(
-      `I wasn't sure about ${unsure.length > 1 ? 'these' : 'this'} — say yes and I'll add ${unsure.length > 1 ? 'them' : 'it'}:\n` +
+      `Ye theek se samajh nahi aaya — "haan" kaho to add kar dun:\n` +
         unsure.map((task) => `• ${task.title}?`).join('\n'),
     );
   }
@@ -114,7 +118,7 @@ async function handleCompleteTask(text: string, to: string): Promise<void> {
   const tasks = await pendingTasks();
 
   if (tasks.length === 0) {
-    await messaging.sendText("You don't have anything pending right now.", to);
+    await messaging.sendText('Abhi kuch pending nahi hai.', to);
     return;
   }
 
@@ -122,7 +126,7 @@ async function handleCompleteTask(text: string, to: string): Promise<void> {
 
   if (!match) {
     await messaging.sendText(
-      `I couldn't tell which one you meant. You have:\n${tasks
+      `Samajh nahi aaya kaunsa. Ye pending hain:\n${tasks
         .slice(0, 10)
         .map((task) => `• ${task.title}`)
         .join('\n')}`,
@@ -135,7 +139,7 @@ async function handleCompleteTask(text: string, to: string): Promise<void> {
 
   const left = tasks.length - 1;
   await messaging.sendText(
-    `Done: ${match.title}${left > 0 ? `\n${left} left today.` : '\nThat was the last one.'}`,
+    `Ho gaya: ${match.title}${left > 0 ? `\n${left} aur baaki hain.` : '\nBas, sab clear.'}`,
     to,
   );
 }
@@ -145,7 +149,7 @@ async function handleAddReminder(text: string, to: string): Promise<void> {
 
   if (!parsed) {
     await messaging.sendText(
-      "I couldn't work out when you meant. Try something like \"remind me to call the bank on Thursday at 3pm\".",
+      'Waqt samajh nahi aaya. Aise bolo: "jumeraat 3 baje bank call karna yaad dilana".',
       to,
     );
     return;
@@ -156,16 +160,16 @@ async function handleAddReminder(text: string, to: string): Promise<void> {
   const lines = [
     `Reminder set: ${parsed.title}`,
     humanTime(parsed.when),
-    "I'll message you 5 minutes before.",
+    '5 minute pehle bata dunga.',
   ];
 
   // The reminder is saved either way; only the calendar copy can fail.
   if (calendarError === 'NOT_CONNECTED') {
-    lines.push('', "(Not in Google Calendar yet — your Google account isn't connected.)");
+    lines.push('', '(Google Calendar pe nahi gaya — account connect nahi hai.)');
   } else if (calendarError) {
-    lines.push('', '(Saved here, but Google Calendar rejected it.)');
+    lines.push('', '(Yahan save hai, lekin Calendar ne reject kar diya.)');
   } else {
-    lines.push('Added to your Google Calendar too.');
+    lines.push('Calendar pe bhi laga diya.');
   }
 
   await messaging.sendText(lines.join('\n'), to);
@@ -182,28 +186,24 @@ async function handleEmail(text: string, to: string): Promise<void> {
     const message = error instanceof Error ? error.message : String(error);
     if (message === 'NOT_CONNECTED') {
       await messaging.sendText(
-        "Your Google account isn't connected yet, so I can't read your inbox. Open the " +
-          'connect link on your dashboard to link it.',
+        'Google account connect nahi hai, is liye inbox nahi parh sakta.',
         to,
       );
       return;
     }
     log.error('Email feature failed', { error: message });
-    await messaging.sendText("I couldn't read your inbox just now.", to);
+    await messaging.sendText('Abhi inbox nahi parh paya.', to);
   }
 }
 
 async function handleExpense(text: string, to: string): Promise<void> {
   const result = await logExpense(text);
   if (!result.ok) {
-    await messaging.sendText(
-      "I couldn't work out the amount. Try something like \"spent 2000 on groceries\".",
-      to,
-    );
+    await messaging.sendText('Amount samajh nahi aaya. Aise bolo: "2000 groceries pe lagaye".', to);
     return;
   }
   await messaging.sendText(
-    `Logged Rs ${result.amount.toLocaleString('en-PK')} — ${result.category}.`,
+    `Note kar liya: Rs ${result.amount.toLocaleString('en-PK')} — ${result.category}.`,
     to,
   );
 }
@@ -211,11 +211,11 @@ async function handleExpense(text: string, to: string): Promise<void> {
 async function handleLearning(text: string, to: string): Promise<void> {
   const saved = await saveLearning(text);
   if (!saved) {
-    await messaging.sendText("I couldn't quite capture that. Say it once more?", to);
+    await messaging.sendText('Theek se samajh nahi aaya. Dobara bolo?', to);
     return;
   }
   await messaging.sendText(
-    `Saved:\n${saved}\n\nI'll bring this back in 3 days, then a week, 2 weeks and a month.`,
+    `Save kar liya:\n${saved}\n\n3 din, phir hafte, 2 hafte aur mahine baad yaad dilaunga.`,
     to,
   );
 }
@@ -226,15 +226,27 @@ async function handleDrive(text: string, to: string): Promise<void> {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (message === 'NOT_CONNECTED') {
-      await messaging.sendText(
-        "Your Google account isn't connected yet, so I can't reach your Drive.",
-        to,
-      );
+      await messaging.sendText('Google connect nahi hai, Drive tak nahi pahunch sakta.', to);
       return;
     }
     log.error('Drive feature failed', { error: message });
-    await messaging.sendText("I couldn't search your Drive just now.", to);
+    await messaging.sendText('Abhi Drive search nahi kar paya.', to);
   }
+}
+
+/**
+ * Podcast. If he named a book, summarise that one. Otherwise ask what is
+ * on his mind first, because a book chosen without that is generic.
+ */
+async function handlePodcast(text: string, to: string): Promise<void> {
+  const named = await bookFromRequest(text);
+
+  if (named) {
+    await sendBookPodcast(text, named, to);
+    return;
+  }
+
+  await askReflection(to);
 }
 
 async function handleOther(text: string, to: string, wasVoice: boolean): Promise<void> {
@@ -247,21 +259,23 @@ async function handleOther(text: string, to: string, wasVoice: boolean): Promise
       {
         role: 'system',
         content:
-          "You are Tayyab's personal assistant on WhatsApp.\n\n" +
-          'IMPORTANT — what you can actually do. Never deny these:\n' +
-          '- You CAN hear voice notes. They are transcribed for you automatically, so a ' +
-          'voice message reaches you as text. Never say you cannot hear audio or that you ' +
-          'are text-only; that is false and confusing.\n' +
-          '- You can record tasks, mark them done, and list what is pending.\n\n' +
-          'Style: reply in two or three sentences at most. Direct and warm, not chirpy. ' +
-          'Never invent tasks or claim something was completed unless it appears in the ' +
-          'context below.\n\n' +
-          (wasVoice ? 'This message arrived as a voice note and was transcribed.\n\n' : '') +
+          'Tum Tayyab ke personal assistant ho, WhatsApp pe.\n\n' +
+          'ZAROORI — ye sab tum kar sakte ho, inkaar kabhi mat karna:\n' +
+          '- Voice note SUN sakte ho. Woh khud transcribe ho kar tumhare paas text mein aata ' +
+          'hai. Kabhi mat kehna ke "main audio nahi sun sakta" — ye jhoot hai.\n' +
+          '- Task likhna, complete karna, pending batana.\n' +
+          '- Reminder lagana, calendar pe daalna, Gmail aur Drive parhna.\n' +
+          '- Kitab ka summary podcast bana kar bhejna.\n\n' +
+          'Do ya teen jumle se zyada mat likho. Seedhi, dostana baat. ' +
+          'Koi task ya kaam khud se mat banao — sirf wahi jo neeche context mein hai.\n\n' +
+          ROMAN_URDU +
+          '\n\n' +
+          (wasVoice ? 'Ye message voice note tha, transcribe hua hai.\n\n' : '') +
           context,
       },
       { role: 'user', content: text },
     ],
-    { temperature: 0.6, maxTokens: 400 },
+    { temperature: 0.6, maxTokens: 500 },
   );
 
   await messaging.sendText(reply, to);
@@ -289,16 +303,24 @@ export async function handleIncoming(message: IncomingMessage): Promise<void> {
       log.error('Transcription failed', {
         error: error instanceof Error ? error.message : String(error),
       });
-      await messaging.sendText(
-        "I couldn't hear that clearly. Could you send it again, or type it?",
-        to,
-      );
+      await messaging.sendText('Awaz saaf nahi aayi. Dobara bhejo ya likh do?', to);
       return;
     }
   }
 
   if (message.kind === 'unsupported' || text.trim() === '') {
-    await messaging.sendText('I can read text and voice notes. Try one of those.', to);
+    await messaging.sendText('Text ya voice note bhejo.', to);
+    return;
+  }
+
+  // Did we ask him something and this is the answer? That has to be
+  // checked BEFORE classification, or "main procrastinate karta hoon"
+  // gets filed as a task.
+  const pending = await getPending();
+  if (pending?.type === 'awaiting_reflection') {
+    await setPending(null);
+    log.info('Treating message as reflection answer');
+    await sendBookPodcast(text, null, to);
     return;
   }
 
@@ -333,7 +355,7 @@ export async function handleIncoming(message: IncomingMessage): Promise<void> {
       await handleEmail(text, to);
       break;
     case 'podcast':
-      await sendPodcast(text, to);
+      await handlePodcast(text, to);
       break;
     case 'log_expense':
       await handleExpense(text, to);

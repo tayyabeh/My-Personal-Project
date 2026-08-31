@@ -15,6 +15,7 @@ import { searchMail, type MailSummary } from '../google/gmail';
 import { llm } from '../llm';
 import { z } from 'zod';
 import { completeJson } from '../llm/json';
+import { ROMAN_URDU } from '../lang';
 
 /** Turn a request like "AI updates from today" into a Gmail query. */
 const QuerySchema = z.object({
@@ -71,7 +72,7 @@ export async function topicDigest(request: string): Promise<string> {
   const mail = await searchMail(query, 12);
 
   if (mail.length === 0) {
-    return `Nothing in your inbox matched "${topic}". (Searched: ${query})`;
+    return `Inbox mein "${topic}" ke baare mein kuch nahi mila.`;
   }
 
   const summary = await llm().complete(
@@ -82,8 +83,8 @@ export async function topicDigest(request: string): Promise<string> {
           `Summarise what these emails say about "${topic}", for someone reading on WhatsApp.\n\n` +
           'Group related items together. Lead with what actually matters. Use short lines, ' +
           'no markdown headings. Around 150 words.\n' +
-          'Summarise ONLY what the emails say — never add outside knowledge. If they are thin ' +
-          'on detail, say so rather than padding.',
+          'Sirf wahi batao jo emails mein likha hai — bahar se kuch mat jodo. Agar emails ' +
+          'mein zyada detail nahi to keh do.\n\n' + ROMAN_URDU,
       },
       { role: 'user', content: render(mail) },
     ],
@@ -100,7 +101,7 @@ export async function needsReply(): Promise<string> {
     15,
   );
 
-  if (mail.length === 0) return 'Nothing unread in the last three days that looks like it needs you.';
+  if (mail.length === 0) return 'Pichle 3 din mein aisa kuch unread nahi jiska jawab chahiye.';
 
   const summary = await llm().complete(
     [
@@ -110,7 +111,7 @@ export async function needsReply(): Promise<string> {
           'These are unread emails. Say which ones genuinely need a reply from the reader and ' +
           'why, in one short line each. Ignore newsletters, notifications, receipts and ' +
           'marketing entirely — do not list them. If none need a reply, say so plainly. ' +
-          'No markdown. Under 150 words.',
+          'No markdown. Under 150 words.\n\n' + ROMAN_URDU,
       },
       { role: 'user', content: render(mail) },
     ],

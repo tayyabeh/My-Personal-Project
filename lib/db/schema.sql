@@ -154,3 +154,7 @@ alter table expenses enable row level security;
 -- Escalating reminders (Phase 3)
 alter table reminders add column if not exists followup_count integer not null default 0;
 alter table reminders add column if not exists last_nudged_at timestamptz;
+
+-- Conversational state and calendar links (Phase 3, later additions)
+alter table settings add column if not exists pending_action jsonb;
+alter table tasks    add column if not exists google_event_id text;

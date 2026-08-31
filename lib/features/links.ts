@@ -7,6 +7,7 @@
  */
 import { llm } from '../llm';
 import { log } from '../logger';
+import { ROMAN_URDU } from '../lang';
 
 /** Finds the first http(s) URL in a message. */
 export function findUrl(text: string): string | null {
@@ -79,7 +80,7 @@ export async function summariseLink(url: string): Promise<string> {
         content:
           'Summarise this web page for someone reading on WhatsApp. Four or five short ' +
           'sentences. Lead with what the page is actually about, then the key points. ' +
-          'Summarise only what the text says; never add outside knowledge. No markdown.',
+          'Sirf wahi batao jo page pe likha hai. No markdown.\n\n' + ROMAN_URDU,
       },
       { role: 'user', content: `${title ? `Title: ${title}\n\n` : ''}${excerpt}` },
     ],

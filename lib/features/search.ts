@@ -9,6 +9,7 @@
 import { search as ddg, SafeSearchType } from 'duck-duck-scrape';
 import { llm } from '../llm';
 import { log } from '../logger';
+import { ROMAN_URDU } from '../lang';
 
 export interface SearchAnswer {
   answer: string;
@@ -132,9 +133,7 @@ export async function searchAndAnswer(question: string): Promise<SearchAnswer> {
   if (top.length === 0) {
     return {
       answer:
-        "I couldn't search for that right now — DuckDuckGo is blocking requests from the " +
-        'server and Wikipedia had nothing. Ask me again later, or tell me to set up a proper ' +
-        'search key.',
+        'Abhi search nahi kar paya. Thori der baad pooch lo.',
       sources: [],
     };
   }
@@ -150,8 +149,8 @@ export async function searchAndAnswer(question: string): Promise<SearchAnswer> {
         content:
           'Answer the question using ONLY the search results provided. Three or four ' +
           'sentences maximum — this is read on WhatsApp. Cite which result you used with ' +
-          '[1], [2] etc. If the results do not actually answer the question, say so plainly ' +
-          'instead of answering from your own knowledge.',
+          '[1], [2] etc. Agar results se jawab nahi milta to saaf keh do, apni yaadasht se ' +
+          'jawab mat do.\n\n' + ROMAN_URDU,
       },
       { role: 'user', content: `Question: ${question}\n\nSearch results:\n\n${context}` },
     ],

@@ -9,6 +9,7 @@ import { completeJson } from '../llm/json';
 import { db } from '../supabase';
 import { pendingTasks, todayLocal, type TaskRow } from '../context';
 import { log } from '../logger';
+import { createAllDayEvent } from '../google/calendar';
 
 // ---------------------------------------------------------------------
 // Extracting tasks from speech
@@ -95,21 +96,51 @@ export async function extractTasks(
   return { ok: true, tasks: result.data.tasks as ExtractedTask[] };
 }
 
-/** Write confident tasks to the database. Returns the titles actually saved. */
-export async function saveTasks(tasks: ExtractedTask[]): Promise<string[]> {
-  if (tasks.length === 0) return [];
+/**
+ * Write confident tasks to the database, and mirror them onto Google
+ * Calendar as all-day entries.
+ *
+ * The database write is what matters; the calendar copy is a convenience.
+ * So calendar failures are logged and swallowed rather than losing the
+ * task, and they run after the insert, never before it.
+ */
+export async function saveTasks(
+  tasks: ExtractedTask[],
+): Promise<{ titles: string[]; onCalendar: number }> {
+  if (tasks.length === 0) return { titles: [], onCalendar: 0 };
 
+  const dueDate = todayLocal();
   const rows = tasks.map((task) => ({
     title: task.title,
     priority: task.priority,
     status: 'pending',
-    due_date: todayLocal(),
+    due_date: dueDate,
   }));
 
-  const { data, error } = await db().from('tasks').insert(rows).select('title');
+  const { data, error } = await db().from('tasks').insert(rows).select('id, title');
   if (error) throw new Error(`Could not save tasks: ${error.message}`);
 
-  return (data ?? []).map((row) => row.title as string);
+  const saved = data ?? [];
+  let onCalendar = 0;
+
+  for (const row of saved) {
+    try {
+      const eventId = await createAllDayEvent(row.title as string, dueDate);
+      if (eventId) {
+        await db().from('tasks').update({ google_event_id: eventId }).eq('id', row.id);
+        onCalendar++;
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      // NOT_CONNECTED simply means Google is not linked; not worth noise.
+      if (message !== 'NOT_CONNECTED') {
+        log.warn('Could not add task to calendar', { title: row.title, error: message });
+      }
+      break; // if one fails they will all fail; do not retry the rest
+    }
+  }
+
+  return { titles: saved.map((row) => row.title as string), onCalendar };
 }
 
 // ---------------------------------------------------------------------
@@ -179,13 +210,13 @@ export async function completeTask(taskId: string): Promise<void> {
 /** A short human-readable list of what is still open. */
 export async function pendingSummary(): Promise<string> {
   const tasks = await pendingTasks();
-  if (tasks.length === 0) return 'Nothing pending. Your list is clear.';
+  if (tasks.length === 0) return 'Kuch pending nahi. List clear hai.';
 
   const lines = tasks.slice(0, 15).map((task) => {
-    const nagged = task.rollover_count > 0 ? ` (${task.rollover_count}x rolled over)` : '';
+    const nagged = task.rollover_count > 0 ? ` (${task.rollover_count} dafa tala)` : '';
     return `• ${task.title}${nagged}`;
   });
 
-  const more = tasks.length > 15 ? `\n…and ${tasks.length - 15} more.` : '';
+  const more = tasks.length > 15 ? `\n…aur ${tasks.length - 15} baaki.` : '';
   return `${tasks.length} pending:\n${lines.join('\n')}${more}`;
 }

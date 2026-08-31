@@ -90,7 +90,7 @@ export async function resurfaceDue(): Promise<string> {
     return 'skipped: window closed';
   }
 
-  await messaging.sendText(`Remember this?\n\n${item.content}`);
+  await messaging.sendText(`Ye yaad hai?\n\n${item.content}`);
 
   await db()
     .from('learnings')
