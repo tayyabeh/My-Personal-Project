@@ -171,6 +171,24 @@ export async function GET(request: Request): Promise<Response> {
     return Response.json({ timings: await probeJson() });
   }
 
+  // Planner only. The agent probe runs it and then runs it again inside
+  // handle(), which muddies the timing when something hangs.
+  const planInput = params.get('plan');
+  if (planInput) {
+    const started = Date.now();
+    try {
+      const plan = await makePlan({ to: 'diag', input: planInput, history: [], say: async () => {} });
+      return Response.json({
+        ms: Date.now() - started,
+        ok: plan.ok,
+        result: plan.ok ? plan.data : plan.error.slice(0, 300),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return Response.json({ ms: Date.now() - started, ok: false, threw: message.slice(0, 300) });
+    }
+  }
+
   const agentInput = params.get('agent');
   if (agentInput) {
     return Response.json({ agent: await probeAgent(agentInput) });
