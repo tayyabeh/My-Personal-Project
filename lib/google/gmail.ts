@@ -107,3 +107,84 @@ export async function createDraft(to: string, subject: string, body: string): Pr
   log.info('Gmail draft created', { id: json.id });
   return json.id;
 }
+
+/**
+ * The full text of one email.
+ *
+ * This is what was missing: searchMail only ever returned subject and a
+ * snippet, so "andar kya likha hai" was unanswerable — the body was never
+ * fetched at all.
+ *
+ * Gmail nests body parts in a tree and base64url-encodes each one. We
+ * walk it preferring text/plain, falling back to text/html with the tags
+ * stripped, because newsletters are frequently HTML-only.
+ */
+export async function readMessage(id: string, maxChars = 6000): Promise<{
+  from: string;
+  subject: string;
+  date: string;
+  body: string;
+} | null> {
+  const token = await accessToken();
+
+  const response = await fetch(`${BASE}/messages/${id}?format=full`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) return null;
+
+  const json = (await response.json()) as {
+    payload?: GmailPart & { headers?: Array<{ name: string; value: string }> };
+    snippet?: string;
+  };
+
+  const headers = json.payload?.headers;
+  const plain = collect(json.payload, 'text/plain');
+  const html = plain ? '' : collect(json.payload, 'text/html');
+
+  const body = (plain || stripHtml(html) || json.snippet || '').replace(/\n{3,}/g, '\n\n').trim();
+
+  return {
+    from: header(headers, 'From'),
+    subject: header(headers, 'Subject') || '(no subject)',
+    date: header(headers, 'Date'),
+    body: body.slice(0, maxChars),
+  };
+}
+
+interface GmailPart {
+  mimeType?: string;
+  body?: { data?: string };
+  parts?: GmailPart[];
+}
+
+/** Depth-first search for the first part of the wanted mime type. */
+function collect(part: GmailPart | undefined, want: string): string {
+  if (!part) return '';
+
+  if (part.mimeType === want && part.body?.data) {
+    return Buffer.from(part.body.data, 'base64url').toString('utf8');
+  }
+
+  for (const child of part.parts ?? []) {
+    const found = collect(child, want);
+    if (found) return found;
+  }
+  return '';
+}
+
+function stripHtml(html: string): string {
+  if (!html) return '';
+  return html
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|tr|li|h[1-6])>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&#\d+;/g, ' ')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim();
+}
