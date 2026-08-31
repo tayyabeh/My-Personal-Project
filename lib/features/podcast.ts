@@ -64,8 +64,8 @@ async function writeScript(mood: string): Promise<string> {
       {
         role: 'system',
         content:
-          'Write a spoken script for a short personal audio message, about 300 words — ' +
-          'roughly two minutes read aloud.\n\n' +
+          'Write a spoken script for a short personal audio message, about 180 words — ' +
+          'roughly 90 seconds read aloud. Do not exceed 200 words.\n\n' +
           'This will be SPOKEN, so: no headings, no bullet points, no markdown, no emoji, ' +
           'no stage directions. Just flowing sentences a person would say out loud.\n\n' +
           'It is addressed to one specific person and must be grounded in the facts below. ' +
