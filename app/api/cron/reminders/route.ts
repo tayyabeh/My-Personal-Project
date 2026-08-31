@@ -8,6 +8,7 @@ import { cronRequestIsAuthorised } from '@/lib/cron-auth';
 import { db } from '@/lib/supabase';
 import { log } from '@/lib/logger';
 import { messaging, templates } from '@/lib/messaging';
+import { escalateUnanswered } from '@/lib/features/escalate';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -35,7 +36,12 @@ async function run(request: Request): Promise<Response> {
     if (error) throw new Error(error.message);
 
     const due = data ?? [];
-    if (due.length === 0) return Response.json({ ok: true, result: 'nothing due' });
+
+    // Follow-ups ride along on the same minute tick rather than needing
+    // their own cron job.
+    const escalated = await escalateUnanswered();
+
+    if (due.length === 0) return Response.json({ ok: true, result: `nothing due; ${escalated}` });
 
     for (const reminder of due) {
       // Marked sent BEFORE sending. If the send fails we would rather lose
@@ -49,7 +55,7 @@ async function run(request: Request): Promise<Response> {
       log.info('Reminder fired', { text: reminder.text });
     }
 
-    return Response.json({ ok: true, result: `fired ${due.length}` });
+    return Response.json({ ok: true, result: `fired ${due.length}; ${escalated}` });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     log.error('Reminder job failed', { error: message });

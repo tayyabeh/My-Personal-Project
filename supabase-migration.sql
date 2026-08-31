@@ -16,3 +16,11 @@ create index if not exists expenses_date_idx on expenses (spent_on desc);
 alter table expenses enable row level security;
 
 select 'expenses table ready' as status;
+
+-- ---------------------------------------------------------------------
+-- Escalating reminders: follow up if a fired reminder got no response.
+-- ---------------------------------------------------------------------
+alter table reminders add column if not exists followup_count integer not null default 0;
+alter table reminders add column if not exists last_nudged_at timestamptz;
+
+select 'migration complete' as status;

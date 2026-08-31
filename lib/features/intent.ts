@@ -24,6 +24,7 @@ export const IntentSchema = z.object({
     'log_expense',
     'expense_summary',
     'log_learning',
+    'drive',
     'other',
   ]),
 });
@@ -43,6 +44,7 @@ Reply ONLY with JSON: {"intent": "..."} where intent is one of:
 - "log_expense"     : reporting money they spent
 - "expense_summary" : asking how much they have spent
 - "log_learning"    : reporting something they learned or want to remember
+- "drive"           : asking about a file or document in their Drive
 - "other"           : small talk, or anything else
 
 "add_reminder" only when a time or day is named; otherwise "add_tasks".
@@ -77,6 +79,8 @@ const EXAMPLES: Array<[string, Intent]> = [
   ['how much did I spend this month', 'expense_summary'],
   ['today I learned that postgres unique constraints can dedupe inserts', 'log_learning'],
   ['note this: opus is the codec whatsapp needs', 'log_learning'],
+  ['find my file about the client proposal', 'drive'],
+  ['summarise the budget spreadsheet in my drive', 'drive'],
   ['how are you', 'other'],
   ['thanks', 'other'],
 ];

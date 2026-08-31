@@ -28,6 +28,7 @@ import { sendPodcast } from '../features/podcast';
 import { logExpense, monthSummary } from '../features/expenses';
 import { saveLearning } from '../features/learnings';
 import { findUrl, summariseLink } from '../features/links';
+import { searchDrive } from '../features/drive';
 
 /**
  * Save the inbound message, and tell the caller whether this is the
@@ -219,6 +220,23 @@ async function handleLearning(text: string, to: string): Promise<void> {
   );
 }
 
+async function handleDrive(text: string, to: string): Promise<void> {
+  try {
+    await messaging.sendText(await searchDrive(text), to);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message === 'NOT_CONNECTED') {
+      await messaging.sendText(
+        "Your Google account isn't connected yet, so I can't reach your Drive.",
+        to,
+      );
+      return;
+    }
+    log.error('Drive feature failed', { error: message });
+    await messaging.sendText("I couldn't search your Drive just now.", to);
+  }
+}
+
 async function handleOther(text: string, to: string, wasVoice: boolean): Promise<void> {
   // A short, context-aware conversational reply. Kept brief on purpose —
   // long replies on WhatsApp are unpleasant to read.
@@ -325,6 +343,9 @@ export async function handleIncoming(message: IncomingMessage): Promise<void> {
       break;
     case 'log_learning':
       await handleLearning(text, to);
+      break;
+    case 'drive':
+      await handleDrive(text, to);
       break;
     default:
       await handleOther(text, to, message.kind === 'audio');
