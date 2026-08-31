@@ -63,7 +63,9 @@ const saveRecord: Tool<{ kind: string; data: Record<string, unknown>; note?: str
   },
 };
 
-const findRecords: Tool<{ kind: string; limit?: number }> = {
+// `limit` is optional to the caller but the schema supplies a default,
+// so by the time run() sees it, it is always a number.
+const findRecords: Tool<{ kind: string; limit: number }> = {
   name: 'find_records',
   description:
     'Kisi kind ki purani entries dekho, nayi se purani tarteeb mein. Trend ya hisab ' +
