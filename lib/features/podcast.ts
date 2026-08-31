@@ -108,7 +108,9 @@ export async function sendPodcast(mood: string, to?: string): Promise<string> {
       error === 'TERMS'
         ? "\n\n(I couldn't record this as audio — the speech model needs its terms accepted " +
           'once at console.groq.com. Here it is in writing.)'
-        : "\n\n(I couldn't record this as audio, so here it is in writing.)";
+        : `\n\n(I couldn't record this as audio, so here it is in writing. Reason: ${String(
+            error,
+          ).slice(0, 150)})`;
 
     await messaging.sendText(script + note, to);
     await db().from('podcasts').insert({ topic: mood, script, audio_url: null });
