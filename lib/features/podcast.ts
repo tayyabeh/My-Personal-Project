@@ -16,7 +16,15 @@ import { pendingTasks, recentCompletionRate } from '../context';
 
 const BUCKET = 'podcasts';
 
-/** Two to three minutes of speech is roughly 300-400 words. */
+/**
+ * Around 180 words, which reads as 75-90 seconds.
+ *
+ * Shorter than the spec's two to three minutes on purpose: speech is
+ * synthesised in ~420-character chunks because of the model's request
+ * limit, and a 400-word script needs enough round trips to risk both the
+ * rate limit and the 60-second function ceiling. A tight 90 seconds that
+ * reliably arrives beats three minutes that fails.
+ */
 async function writeScript(mood: string): Promise<string> {
   const [tasks, rate] = await Promise.all([pendingTasks(), recentCompletionRate()]);
   const avoided = tasks.filter((t) => t.rollover_count > 0);
