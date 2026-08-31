@@ -209,6 +209,8 @@ export async function GET(request: Request): Promise<Response> {
     keys: {
       GEMINI_API_KEY: present('GEMINI_API_KEY'),
       GROQ_API_KEY: present('GROQ_API_KEY'),
+      // How many keys production can actually rotate between.
+      groqKeyCount: ['GROQ_API_KEY','GROQ_API_KEY_2','GROQ_API_KEY_3','GROQ_API_KEY_4','GROQ_API_KEY_5'].filter(present).length,
       SUPABASE_SERVICE_ROLE_KEY: present('SUPABASE_SERVICE_ROLE_KEY'),
       WHATSAPP_ACCESS_TOKEN: present('WHATSAPP_ACCESS_TOKEN'),
       TAVILY_API_KEY: present('TAVILY_API_KEY'),
