@@ -158,3 +158,15 @@ alter table reminders add column if not exists last_nudged_at timestamptz;
 -- Conversational state and calendar links (Phase 3, later additions)
 alter table settings add column if not exists pending_action jsonb;
 alter table tasks    add column if not exists google_event_id text;
+
+-- Editable schedule (Phase 3, later addition)
+alter table settings add column if not exists checkin_times text[] not null default '{13:00,16:00,19:00,22:00,01:00}';
+alter table settings add column if not exists weekly_time time not null default '21:00';
+alter table settings add column if not exists weekly_dow integer not null default 0;
+alter table settings add column if not exists resurface_time time not null default '18:00';
+
+create table if not exists job_runs (
+  job text primary key,
+  last_run_at timestamptz not null default now()
+);
+alter table job_runs enable row level security;

@@ -20,16 +20,8 @@ const SECRET = env.CRON_SECRET;
 
 // [jobname, endpoint, cron (UTC), human label]
 const JOBS = [
-  ['morning-greeting', 'morning', '0 5 * * *', '10:00 am daily'],
-  ['checkin-1', 'checkin', '0 8 * * *', '01:00 pm daily'],
-  ['checkin-2', 'checkin', '0 11 * * *', '04:00 pm daily'],
-  ['checkin-3', 'checkin', '0 14 * * *', '07:00 pm daily'],
-  ['checkin-4', 'checkin', '0 17 * * *', '10:00 pm daily'],
-  ['checkin-5', 'checkin', '0 20 * * *', '01:00 am daily'],
-  ['night-summary', 'night', '0 22 * * *', '03:00 am daily'],
   ['reminder-check', 'reminders', '* * * * *', 'every minute'],
-  ['resurface-learnings', 'resurface', '0 13 * * *', '06:00 pm daily'],
-  ['weekly-review', 'weekly', '0 16 * * 0', 'Sunday 09:00 pm'],
+  ['scheduler-tick', 'tick', '*/5 * * * *', 'every 5 minutes'],
 ];
 
 const D = '$$'; // dollar-quote delimiter, kept in one place so it cannot be mangled
@@ -50,8 +42,27 @@ create extension if not exists pg_net;
 
 `;
 
-sql += '-- Clear any previous versions of these jobs.\n';
-for (const [name] of JOBS) {
+/**
+ * Job names this file used to create, one per fixed time.
+ *
+ * Times now live in the settings table, so these must be unscheduled --
+ * left in place they keep firing alongside the tick and every message
+ * arrives twice.
+ */
+const RETIRED = [
+  'morning-greeting',
+  'night-summary',
+  'checkin-1',
+  'checkin-2',
+  'checkin-3',
+  'checkin-4',
+  'checkin-5',
+  'resurface-learnings',
+  'weekly-review',
+];
+
+sql += '-- Clear previous versions, including the retired per-time jobs.\n';
+for (const name of [...RETIRED, ...JOBS.map(([name]) => name)]) {
   sql += `select cron.unschedule('${name}') where exists (select 1 from cron.job where jobname = '${name}');\n`;
 }
 sql += '\n';

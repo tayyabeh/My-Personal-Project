@@ -10,6 +10,7 @@ import { search as ddg, SafeSearchType } from 'duck-duck-scrape';
 import { llm } from '../llm';
 import { log } from '../logger';
 import { ROMAN_URDU } from '../lang';
+import { optional } from '../env';
 
 export interface SearchAnswer {
   answer: string;
@@ -126,8 +127,59 @@ async function tryWikipedia(question: string): Promise<Hit[]> {
   }
 }
 
+
+/**
+ * Google Programmable Search, the JSON API.
+ *
+ * This is the only one of the three that reliably answers "what happened
+ * today" — Wikipedia cannot, and DuckDuckGo blocks servers. It is free
+ * for 100 queries a day with no card, but it does need two values set up
+ * once: an API key and a search-engine id.
+ *
+ * Silently skipped when those are absent, so the feature degrades to the
+ * other sources rather than erroring.
+ */
+async function tryGoogle(question: string): Promise<Hit[]> {
+  const key = optional('GOOGLE_SEARCH_API_KEY');
+  const cx = optional('GOOGLE_SEARCH_CX');
+  if (!key || !cx) return [];
+
+  try {
+    const params = new URLSearchParams({ key, cx, q: question, num: '5' });
+    const response = await fetch(`https://www.googleapis.com/customsearch/v1?${params}`);
+
+    if (!response.ok) {
+      // 429 here means the 100/day free quota is spent.
+      log.warn('Google search unavailable', {
+        status: response.status,
+        detail: (await response.text()).slice(0, 160),
+      });
+      return [];
+    }
+
+    const json = (await response.json()) as {
+      items?: Array<{ title?: string; link?: string; snippet?: string }>;
+    };
+
+    return (json.items ?? [])
+      .filter((item) => item.link)
+      .map((item) => ({
+        title: clean(item.title ?? ''),
+        url: item.link!,
+        snippet: clean(item.snippet ?? ''),
+      }));
+  } catch (error) {
+    log.warn('Google search failed', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return [];
+  }
+}
+
 export async function searchAndAnswer(question: string): Promise<SearchAnswer> {
-  let top = await tryDuckDuckGo(question);
+  // Google first: it is the only source that knows about today.
+  let top = await tryGoogle(question);
+  if (top.length === 0) top = await tryDuckDuckGo(question);
   if (top.length === 0) top = await tryWikipedia(question);
 
   if (top.length === 0) {

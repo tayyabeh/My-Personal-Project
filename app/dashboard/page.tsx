@@ -43,6 +43,10 @@ export default async function DashboardPage() {
         <h1 className="text-2xl font-semibold text-neutral-900 dark:text-neutral-100">
           Personal AI Manager
         </h1>
+        <div className="flex items-baseline gap-3">
+        <a href="/dashboard/settings" className="text-xs text-neutral-500 underline">
+          settings
+        </a>
         <span className="text-xs text-neutral-500">
           {new Date().toLocaleDateString('en-GB', {
             timeZone: 'Asia/Karachi',
@@ -51,6 +55,7 @@ export default async function DashboardPage() {
             month: 'long',
           })}
         </span>
+        </div>
       </header>
 
       {/* Headline block */}
