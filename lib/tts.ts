@@ -14,16 +14,62 @@
  * once in the Groq console — the error message below says so plainly
  * rather than failing mysteriously.
  *
- * Output is MP3. WhatsApp plays MP3 inline as an audio message; it shows
- * as a player rather than a voice-note waveform. Getting the waveform
- * would mean OGG Opus, which would mean bundling ffmpeg's 78MB binary
- * into a free-tier deployment. Not worth it for a cosmetic difference.
+ * Groq only returns WAV, which WhatsApp does not accept (it takes mp3,
+ * aac, mp4 and ogg-opus). So the WAV is re-encoded to MP3 with lamejs, a
+ * pure-JavaScript encoder — no native binary, no install scripts, nothing
+ * for Vercel to choke on. MP3 plays inline as an audio message; a
+ * voice-note waveform would need OGG Opus and therefore ffmpeg's 78MB
+ * binary, which is not worth it for a cosmetic difference.
  */
+import * as lamejs from '@breezystack/lamejs';
+
+/**
+ * lamejs ships both an ESM build (named exports) and a CJS/IIFE build
+ * (everything under `default`). Which one a bundler picks varies, so
+ * resolve the constructor from either shape rather than assuming.
+ */
+type Encoder = {
+  encodeBuffer(left: Int16Array, right?: Int16Array): Uint8Array;
+  flush(): Uint8Array;
+};
+type EncoderCtor = new (channels: number, sampleRate: number, kbps: number) => Encoder;
+
+const shape = lamejs as unknown as {
+  Mp3Encoder?: EncoderCtor;
+  default?: { Mp3Encoder?: EncoderCtor };
+};
+const Mp3Encoder = shape.Mp3Encoder ?? shape.default?.Mp3Encoder;
+
+/**
+ * lamejs's CJS/IIFE build exports nothing usable; only its ESM build
+ * does. Bundlers that pick the ESM condition (Next.js does) are fine.
+ * If something resolves the CJS build instead, fail with a message that
+ * says so, rather than "not a constructor" from deep inside the encoder.
+ */
+function encoder(channels: number, sampleRate: number, kbps: number): Encoder {
+  if (typeof Mp3Encoder !== 'function') {
+    throw new Error(
+      'The MP3 encoder did not load (lamejs resolved to its CJS build, which exports nothing).',
+    );
+  }
+  return new Mp3Encoder(channels, sampleRate, kbps);
+}
 import { env } from './env';
 import { log } from './logger';
 
 const TTS_MODEL = 'canopylabs/orpheus-v1-english';
-const DEFAULT_VOICE = 'tara';
+
+/** The voices this model actually accepts. Anything else is a 400. */
+export const VOICES = {
+  autumn: 'autumn',
+  diana: 'diana',
+  hannah: 'hannah',
+  austin: 'austin',
+  daniel: 'daniel',
+  troy: 'troy',
+} as const;
+
+const DEFAULT_VOICE = VOICES.diana;
 
 export class TermsNotAcceptedError extends Error {
   constructor() {
@@ -47,7 +93,8 @@ export async function speak(text: string, voice: string = DEFAULT_VOICE): Promis
       model: TTS_MODEL,
       voice,
       input: text,
-      response_format: 'mp3',
+      // WAV is the only format this model offers.
+      response_format: 'wav',
     }),
   });
 
@@ -57,7 +104,75 @@ export async function speak(text: string, voice: string = DEFAULT_VOICE): Promis
     throw new Error(`Speech generation failed (HTTP ${response.status}): ${detail.slice(0, 300)}`);
   }
 
-  return Buffer.from(await response.arrayBuffer());
+  return wavToMp3(Buffer.from(await response.arrayBuffer()));
+}
+
+/**
+ * Re-encode 16-bit PCM WAV to MP3.
+ *
+ * Walks the RIFF chunks rather than assuming a 44-byte header, because
+ * WAV files often carry LIST or fact chunks before the data and a fixed
+ * offset would slice audio into the middle of a sample.
+ */
+function wavToMp3(wav: Buffer): Buffer {
+  if (wav.subarray(0, 4).toString('ascii') !== 'RIFF') {
+    throw new Error('Speech service did not return a WAV file');
+  }
+
+  let channels = 1;
+  let sampleRate = 24000;
+  let dataStart = -1;
+  let dataLength = 0;
+
+  let offset = 12; // past "RIFF<size>WAVE"
+  while (offset + 8 <= wav.length) {
+    const id = wav.subarray(offset, offset + 4).toString('ascii');
+    const size = wav.readUInt32LE(offset + 4);
+
+    if (id === 'fmt ') {
+      channels = wav.readUInt16LE(offset + 10);
+      sampleRate = wav.readUInt32LE(offset + 12);
+    } else if (id === 'data') {
+      dataStart = offset + 8;
+      dataLength = size;
+      break;
+    }
+    offset += 8 + size + (size % 2); // chunks are word-aligned
+  }
+
+  if (dataStart < 0) throw new Error('WAV file had no data chunk');
+
+  const pcm = new Int16Array(
+    wav.buffer.slice(
+      wav.byteOffset + dataStart,
+      wav.byteOffset + dataStart + Math.min(dataLength, wav.length - dataStart),
+    ),
+  );
+
+  const mp3 = encoder(channels, sampleRate, 64);
+  const output: Buffer[] = [];
+  const BLOCK = 1152; // one MP3 frame
+
+  for (let i = 0; i < pcm.length; i += BLOCK * channels) {
+    const slice = pcm.subarray(i, i + BLOCK * channels);
+    const encoded =
+      channels === 2
+        ? mp3.encodeBuffer(deinterleave(slice, 0), deinterleave(slice, 1))
+        : mp3.encodeBuffer(slice);
+    if (encoded.length > 0) output.push(Buffer.from(encoded));
+  }
+
+  const flushed = mp3.flush();
+  if (flushed.length > 0) output.push(Buffer.from(flushed));
+
+  return Buffer.concat(output);
+}
+
+/** Pull one channel out of interleaved stereo samples. */
+function deinterleave(samples: Int16Array, channel: number): Int16Array {
+  const out = new Int16Array(Math.floor(samples.length / 2));
+  for (let i = 0; i < out.length; i++) out[i] = samples[i * 2 + channel];
+  return out;
 }
 
 /** Same, but reports why it failed instead of throwing. */
