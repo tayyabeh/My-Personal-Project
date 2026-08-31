@@ -134,3 +134,37 @@ export async function handleIncoming(message: IncomingMessage): Promise<void> {
     await messaging.sendText(result.reply, to);
   }
 }
+
+/**
+ * The public entry point.
+ *
+ * Wraps the whole pipeline so that a thrown error still produces a
+ * message. When both LLM providers were out of quota, the throw
+ * propagated past every handler and nothing was sent — the user saw
+ * silence, which reads as being ignored rather than as a temporary
+ * limit. Any failure now says something true.
+ */
+export async function handleIncomingSafely(message: IncomingMessage): Promise<void> {
+  try {
+    await handleIncoming(message);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    log.error('Handler failed, sending a plain reply', { error: detail.slice(0, 300) });
+
+    const rateLimited = /rate limit|429|quota|exceeded/i.test(detail);
+
+    try {
+      await messaging.sendText(
+        rateLimited
+          ? 'Aaj AI ki free limit khatam ho gayi hai. Thori der baad ya kal dobara bolo.'
+          : 'Kuch gadbad ho gayi meri taraf se. Dobara bhejo?',
+        message.from,
+      );
+    } catch (sendError) {
+      // Nothing left to try; at least record why the user heard nothing.
+      log.error('Could not even send the failure notice', {
+        error: sendError instanceof Error ? sendError.message : String(sendError),
+      });
+    }
+  }
+}

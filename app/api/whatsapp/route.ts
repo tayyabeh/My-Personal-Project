@@ -16,7 +16,7 @@ import { waitUntil } from '@vercel/functions';
 import { env } from '@/lib/env';
 import { log } from '@/lib/logger';
 import { messaging } from '@/lib/messaging';
-import { handleIncoming } from '@/lib/handlers/incoming';
+import { handleIncomingSafely } from '@/lib/handlers/incoming';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60; // Vercel Hobby allows up to 60 seconds.
@@ -93,7 +93,7 @@ export async function POST(request: Request): Promise<Response> {
       (async () => {
         for (const message of messages) {
           try {
-            await handleIncoming(message);
+            await handleIncomingSafely(message);
           } catch (error) {
             log.error('Failed to handle message', {
               id: message.whatsappMessageId,
