@@ -15,7 +15,7 @@ import {
 } from './types';
 
 const BASE_URL = 'https://api.groq.com/openai/v1';
-const MAX_ATTEMPTS = 4;
+const MAX_ATTEMPTS = 2;
 
 /**
  * Ceiling on one attempt, and on all retries together.
@@ -25,8 +25,8 @@ const MAX_ATTEMPTS = 4;
  * budget inside one call could consume the entire request on its own and
  * guarantee the timeout it was meant to survive.
  */
-const REQUEST_TIMEOUT_MS = 8_000;
-const TOTAL_BUDGET_MS = 16_000;
+const REQUEST_TIMEOUT_MS = 6_000;
+const TOTAL_BUDGET_MS = 7_000;
 
 /** Wait, but never longer than Groq's own suggested retry delay. */
 function sleep(ms: number): Promise<void> {

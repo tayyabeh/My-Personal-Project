@@ -38,7 +38,7 @@ const BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
  * enough to spend the function's whole life; the pipeline timed out even
  * though a single call answered in 1.3 seconds.
  */
-const REQUEST_TIMEOUT_MS = 8_000;
+const REQUEST_TIMEOUT_MS = 6_000;
 
 interface GeminiTurn {
   role: 'user' | 'model';
