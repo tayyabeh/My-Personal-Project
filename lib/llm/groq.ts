@@ -1,11 +1,19 @@
 /**
- * Groq provider — the default.
+ * Groq provider, with key rotation.
  *
- * Groq's free tier is generous on requests per minute but much tighter
- * on TOKENS per minute, so keep the context we send small. That is the
- * limit you will actually hit, not the request count.
+ * The free tier allows 8,000 tokens per minute per key, and one agent
+ * message — a planner call plus a call per step — can spend that alone.
+ * Several keys each carry their own budget, so when one is rate limited
+ * the next takes over immediately instead of anyone waiting.
+ *
+ * That "instead of waiting" is the important part. Groq's retry-after is
+ * not always small: when a longer window is spent it asks for minutes,
+ * and a reply of 294 seconds was observed. Sleeping for that inside a
+ * function Vercel kills at 60 seconds meant the user got nothing at all.
+ * Rotating sidesteps the wait entirely; sleeping is now a last resort and
+ * never exceeds the remaining budget.
  */
-import { env } from '../env';
+import { env, optional } from '../env';
 import { log } from '../logger';
 import {
   RateLimitedError,
@@ -15,117 +23,150 @@ import {
 } from './types';
 
 const BASE_URL = 'https://api.groq.com/openai/v1';
-const MAX_ATTEMPTS = 2;
+
+/** One try per key, plus a little room to come back to the first. */
+const MAX_ATTEMPTS = 6;
+const REQUEST_TIMEOUT_MS = 8_000;
+const TOTAL_BUDGET_MS = 20_000;
 
 /**
- * Ceiling on one attempt, and on all retries together.
+ * Every key configured, in order of preference.
  *
- * Both are deliberately small. A message costs several sequential calls,
- * and Vercel kills the function at 60 seconds — so a 45-second retry
- * budget inside one call could consume the entire request on its own and
- * guarantee the timeout it was meant to survive.
+ * GROQ_API_KEY is the primary; GROQ_API_KEY_2..5 are extras. A
+ * comma-separated GROQ_API_KEYS is also accepted so more can be added
+ * without another variable.
  */
-const REQUEST_TIMEOUT_MS = 6_000;
-const TOTAL_BUDGET_MS = 7_000;
+function apiKeys(): string[] {
+  const listed = optional('GROQ_API_KEYS')
+    .split(',')
+    .map((k) => k.trim());
 
-/** Wait, but never longer than Groq's own suggested retry delay. */
+  const numbered = [
+    env.groqApiKey(),
+    optional('GROQ_API_KEY_2'),
+    optional('GROQ_API_KEY_3'),
+    optional('GROQ_API_KEY_4'),
+    optional('GROQ_API_KEY_5'),
+  ];
+
+  return [...new Set([...numbered, ...listed].map((k) => k.trim()).filter(Boolean))];
+}
+
+/**
+ * When each key becomes usable again.
+ *
+ * Module-level, so it survives across requests on a warm instance and a
+ * key known to be spent is skipped rather than re-tried. A cold start
+ * forgets, which costs one wasted call and is not worth persisting.
+ */
+const usableAgain = new Map<string, number>();
+
+function shortLabel(key: string): string {
+  return `…${key.slice(-6)}`;
+}
+
+/** Keys not currently cooling down, preferred order preserved. */
+function readyKeys(keys: string[]): string[] {
+  const now = Date.now();
+  return keys.filter((key) => (usableAgain.get(key) ?? 0) <= now);
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**
- * Call Groq, retrying on 429 (rate limited) and 5xx with exponential
- * backoff. If Groq tells us how long to wait via retry-after, we respect
- * that instead of guessing.
+ * Call Groq, moving to another key when one is rate limited.
+ *
+ * Only sleeps when every key is cooling down AND the shortest wait fits
+ * in what is left of the budget.
  */
-async function callWithRetry(path: string, init: RequestInit): Promise<Response> {
-  let lastDetail = '';
+async function callWithRetry(path: string, build: (key: string) => RequestInit): Promise<Response> {
+  const keys = apiKeys();
+  if (keys.length === 0) throw new Error('No Groq API key configured');
+
   const started = Date.now();
+  let lastDetail = '';
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    // Backing off past the function's own lifetime just guarantees a kill.
-    if (Date.now() - started > TOTAL_BUDGET_MS) {
-      throw new RateLimitedError(`Groq retries exceeded ${TOTAL_BUDGET_MS}ms: ${lastDetail}`);
+    const remaining = TOTAL_BUDGET_MS - (Date.now() - started);
+    if (remaining <= 0) {
+      throw new RateLimitedError(`Groq budget of ${TOTAL_BUDGET_MS / 1000}s spent: ${lastDetail}`);
     }
 
+    const ready = readyKeys(keys);
+
+    if (ready.length === 0) {
+      // Everything is cooling down. Wait only if the soonest one returns
+      // in time to still be useful.
+      const soonest = Math.min(...keys.map((k) => usableAgain.get(k) ?? 0));
+      const wait = soonest - Date.now();
+
+      if (wait > remaining) {
+        throw new RateLimitedError(
+          `All ${keys.length} Groq key(s) rate limited; next free in ${Math.round(wait / 1000)}s, ` +
+            `which does not fit the remaining ${Math.round(remaining / 1000)}s.`,
+        );
+      }
+
+      log.warn('All Groq keys cooling down, waiting', { waitMs: wait, keys: keys.length });
+      await sleep(Math.max(wait, 250));
+      continue;
+    }
+
+    const key = ready[0];
     const response = await fetch(`${BASE_URL}${path}`, {
-      ...init,
+      ...build(key),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
 
     if (response.ok) return response;
 
-    const retryable = response.status === 429 || response.status >= 500;
-    lastDetail = await response.text();
+    lastDetail = (await response.text()).slice(0, 300);
 
-    if (!retryable || attempt === MAX_ATTEMPTS) {
-      if (response.status === 429) {
-        throw new RateLimitedError(`Groq rate limit not cleared after ${attempt} attempts: ${lastDetail}`);
-      }
-      throw new Error(`Groq request failed (HTTP ${response.status}): ${lastDetail}`);
-    }
+    if (response.status === 429) {
+      const suggested = Number(response.headers.get('retry-after')) * 1000;
+      const cooldown = Number.isFinite(suggested) && suggested > 0 ? suggested : 30_000;
 
-    const suggested = Number(response.headers.get('retry-after')) * 1000;
-    const wanted =
-      Number.isFinite(suggested) && suggested > 0 ? suggested : 2 ** attempt * 500;
-
-    /*
-     * Never sleep past the budget.
-     *
-     * This was the bug behind every timeout. Groq's retry-after is not
-     * always small — when a longer-window quota is spent it asks for
-     * minutes, and one observed reply was 294 seconds. The old code slept
-     * for exactly that, so a single call sat for 4.9 minutes while Vercel
-     * killed the function at 60 seconds and the user got nothing. The
-     * budget check ran at the top of the loop, which is after the sleep,
-     * so it never got the chance to stop it.
-     *
-     * If the wait cannot fit in what is left, there is no point waiting
-     * at all — fail now and let the caller fall back or answer honestly.
-     */
-    const remaining = TOTAL_BUDGET_MS - (Date.now() - started);
-    if (wanted > remaining) {
-      log.warn('Groq asked for a wait longer than the budget; giving up', {
-        askedMs: wanted,
-        remainingMs: remaining,
+      usableAgain.set(key, Date.now() + cooldown);
+      log.warn('Groq key rate limited, rotating', {
+        key: shortLabel(key),
+        cooldownMs: cooldown,
+        keysLeft: readyKeys(keys).length,
       });
-      throw new RateLimitedError(
-        `Groq rate limited and asked to wait ${Math.round(wanted / 1000)}s, ` +
-          `which does not fit the ${TOTAL_BUDGET_MS / 1000}s budget.`,
-      );
+      continue;
     }
 
-    log.warn('Groq rate limited, backing off', {
-      status: response.status,
-      attempt,
-      waitMs: wanted,
-    });
-    await sleep(wanted);
+    if (response.status >= 500) {
+      log.warn('Groq server error, retrying', { status: response.status, attempt });
+      continue;
+    }
+
+    throw new Error(`Groq request failed (HTTP ${response.status}): ${lastDetail}`);
   }
 
-  throw new RateLimitedError(`Groq unavailable: ${lastDetail}`);
+  throw new RateLimitedError(`Groq unavailable after ${MAX_ATTEMPTS} attempts: ${lastDetail}`);
 }
 
 export class GroqProvider implements LLMProvider {
   readonly name = 'groq';
 
   async complete(messages: Message[], opts: CompleteOptions = {}): Promise<string> {
-    const response = await callWithRetry('/chat/completions', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${env.groqApiKey()}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: env.groqModel(),
-        messages,
-        temperature: opts.temperature ?? 0.3,
-        max_tokens: opts.maxTokens ?? 1024,
-        // Groq's native JSON mode. Belt and braces alongside our own
-        // prompting and Zod validation.
-        ...(opts.json ? { response_format: { type: 'json_object' } } : {}),
-      }),
+    const body = JSON.stringify({
+      model: env.groqModel(),
+      messages,
+      temperature: opts.temperature ?? 0.3,
+      max_tokens: opts.maxTokens ?? 1024,
+      // Groq's native JSON mode. Belt and braces alongside our own
+      // prompting and Zod validation.
+      ...(opts.json ? { response_format: { type: 'json_object' } } : {}),
     });
+
+    const response = await callWithRetry('/chat/completions', (key) => ({
+      method: 'POST',
+      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body,
+    }));
 
     const json = (await response.json()) as {
       choices?: Array<{ message?: { content?: string } }>;
@@ -140,15 +181,22 @@ export class GroqProvider implements LLMProvider {
     // directly — no conversion needed on the way in.
     const extension = mimeType.includes('ogg') ? 'ogg' : 'm4a';
 
-    const form = new FormData();
-    form.append('model', env.groqWhisperModel());
-    form.append('response_format', 'text');
-    form.append('file', new Blob([new Uint8Array(audio)], { type: mimeType }), `voice.${extension}`);
+    const response = await callWithRetry('/audio/transcriptions', (key) => {
+      // Rebuilt per attempt: a FormData body cannot be replayed once sent.
+      const form = new FormData();
+      form.append('model', env.groqWhisperModel());
+      form.append('response_format', 'text');
+      form.append(
+        'file',
+        new Blob([new Uint8Array(audio)], { type: mimeType }),
+        `voice.${extension}`,
+      );
 
-    const response = await callWithRetry('/audio/transcriptions', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${env.groqApiKey()}` },
-      body: form,
+      return {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${key}` },
+        body: form,
+      };
     });
 
     return (await response.text()).trim();
