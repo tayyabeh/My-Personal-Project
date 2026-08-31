@@ -66,16 +66,41 @@ async function callWithRetry(path: string, init: RequestInit): Promise<Response>
     }
 
     const suggested = Number(response.headers.get('retry-after')) * 1000;
-    const backoff = Number.isFinite(suggested) && suggested > 0
-      ? suggested
-      : 2 ** attempt * 500; // 1s, 2s, 4s
+    const wanted =
+      Number.isFinite(suggested) && suggested > 0 ? suggested : 2 ** attempt * 500;
+
+    /*
+     * Never sleep past the budget.
+     *
+     * This was the bug behind every timeout. Groq's retry-after is not
+     * always small — when a longer-window quota is spent it asks for
+     * minutes, and one observed reply was 294 seconds. The old code slept
+     * for exactly that, so a single call sat for 4.9 minutes while Vercel
+     * killed the function at 60 seconds and the user got nothing. The
+     * budget check ran at the top of the loop, which is after the sleep,
+     * so it never got the chance to stop it.
+     *
+     * If the wait cannot fit in what is left, there is no point waiting
+     * at all — fail now and let the caller fall back or answer honestly.
+     */
+    const remaining = TOTAL_BUDGET_MS - (Date.now() - started);
+    if (wanted > remaining) {
+      log.warn('Groq asked for a wait longer than the budget; giving up', {
+        askedMs: wanted,
+        remainingMs: remaining,
+      });
+      throw new RateLimitedError(
+        `Groq rate limited and asked to wait ${Math.round(wanted / 1000)}s, ` +
+          `which does not fit the ${TOTAL_BUDGET_MS / 1000}s budget.`,
+      );
+    }
 
     log.warn('Groq rate limited, backing off', {
       status: response.status,
       attempt,
-      waitMs: backoff,
+      waitMs: wanted,
     });
-    await sleep(backoff);
+    await sleep(wanted);
   }
 
   throw new RateLimitedError(`Groq unavailable: ${lastDetail}`);
