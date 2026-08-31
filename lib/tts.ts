@@ -21,64 +21,29 @@
  * voice-note waveform would need OGG Opus and therefore ffmpeg's 78MB
  * binary, which is not worth it for a cosmetic difference.
  */
-import * as lamejs from '@breezystack/lamejs';
-
-/**
- * lamejs ships both an ESM build (named exports) and a CJS/IIFE build
- * (everything under `default`). Which one a bundler picks varies, so
- * resolve the constructor from either shape rather than assuming.
- */
 type Encoder = {
   encodeBuffer(left: Int16Array, right?: Int16Array): Uint8Array;
   flush(): Uint8Array;
 };
 type EncoderCtor = new (channels: number, sampleRate: number, kbps: number) => Encoder;
 
-const shape = lamejs as unknown as {
-  Mp3Encoder?: EncoderCtor;
-  default?: { Mp3Encoder?: EncoderCtor };
-};
-const Mp3Encoder = shape.Mp3Encoder ?? shape.default?.Mp3Encoder;
-
 /**
- * lamejs's CJS/IIFE build exports nothing usable; only its ESM build
- * does. Bundlers that pick the ESM condition (Next.js does) are fine.
- * If something resolves the CJS build instead, fail with a message that
- * says so, rather than "not a constructor" from deep inside the encoder.
+ * lamejs ships an ESM build with named exports and a CJS/IIFE build that
+ * exports nothing usable. A static import can be resolved to either
+ * depending on the bundler; a dynamic import reliably takes the ESM
+ * condition. Both shapes are still checked, so a wrong resolution fails
+ * with an explanatory message rather than "not a constructor".
  */
-function encoder(channels: number, sampleRate: number, kbps: number): Encoder {
-  if (typeof Mp3Encoder !== 'function') {
-    throw new Error(
-      'The MP3 encoder did not load (lamejs resolved to its CJS build, which exports nothing).',
-    );
+async function loadEncoder(): Promise<EncoderCtor> {
+  const mod = (await import('@breezystack/lamejs')) as unknown as {
+    Mp3Encoder?: EncoderCtor;
+    default?: { Mp3Encoder?: EncoderCtor };
+  };
+  const ctor = mod.Mp3Encoder ?? mod.default?.Mp3Encoder;
+  if (typeof ctor !== 'function') {
+    throw new Error('MP3 encoder unavailable (lamejs resolved to its CJS build)');
   }
-  return new Mp3Encoder(channels, sampleRate, kbps);
-}
-import { env } from './env';
-import { log } from './logger';
-
-const TTS_MODEL = 'canopylabs/orpheus-v1-english';
-
-/** The voices this model actually accepts. Anything else is a 400. */
-export const VOICES = {
-  autumn: 'autumn',
-  diana: 'diana',
-  hannah: 'hannah',
-  austin: 'austin',
-  daniel: 'daniel',
-  troy: 'troy',
-} as const;
-
-const DEFAULT_VOICE = VOICES.diana;
-
-export class TermsNotAcceptedError extends Error {
-  constructor() {
-    super(
-      'The speech model needs its terms accepted once, at ' +
-        'https://console.groq.com/playground?model=canopylabs%2Forpheus-v1-english',
-    );
-    this.name = 'TermsNotAcceptedError';
-  }
+  return ctor;
 }
 
 /** Synthesise speech. Returns MP3 bytes. */
@@ -104,7 +69,7 @@ export async function speak(text: string, voice: string = DEFAULT_VOICE): Promis
     throw new Error(`Speech generation failed (HTTP ${response.status}): ${detail.slice(0, 300)}`);
   }
 
-  return wavToMp3(Buffer.from(await response.arrayBuffer()));
+  return await wavToMp3(Buffer.from(await response.arrayBuffer()));
 }
 
 /**
@@ -114,7 +79,7 @@ export async function speak(text: string, voice: string = DEFAULT_VOICE): Promis
  * WAV files often carry LIST or fact chunks before the data and a fixed
  * offset would slice audio into the middle of a sample.
  */
-function wavToMp3(wav: Buffer): Buffer {
+async function wavToMp3(wav: Buffer): Promise<Buffer> {
   if (wav.subarray(0, 4).toString('ascii') !== 'RIFF') {
     throw new Error('Speech service did not return a WAV file');
   }
@@ -149,7 +114,8 @@ function wavToMp3(wav: Buffer): Buffer {
     ),
   );
 
-  const mp3 = encoder(channels, sampleRate, 64);
+  const Ctor = await loadEncoder();
+  const mp3 = new Ctor(channels, sampleRate, 64);
   const output: Buffer[] = [];
   const BLOCK = 1152; // one MP3 frame
 
