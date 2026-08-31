@@ -16,7 +16,7 @@
 import { cronRequestIsAuthorised } from '@/lib/cron-auth';
 import { optional } from '@/lib/env';
 import { llm } from '@/lib/llm';
-import { handle } from '@/lib/agents/orchestrator';
+import { handle, makePlan } from '@/lib/agents/orchestrator';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -58,6 +58,22 @@ async function probeAgent(input: string) {
   const started = Date.now();
   const sent: string[] = [];
 
+  // Time the planner on its own first. Even a greeting, which needs no
+  // agent at all, was timing out — so the split matters.
+  const planStarted = Date.now();
+  let planMs = -1;
+  let planResult = 'not reached';
+  try {
+    const plan = await makePlan({ to: 'diag', input, history: [], say: async () => {} });
+    planMs = Date.now() - planStarted;
+    planResult = plan.ok
+      ? `steps: ${plan.data.steps.map((s) => s.agent).join(' -> ') || '(none)'}`
+      : `plan failed: ${plan.error.slice(0, 120)}`;
+  } catch (error) {
+    planMs = Date.now() - planStarted;
+    planResult = `threw: ${(error instanceof Error ? error.message : String(error)).slice(0, 160)}`;
+  }
+
   try {
     const result = await handle({
       to: '923273844643',
@@ -71,6 +87,8 @@ async function probeAgent(input: string) {
 
     return {
       ok: true,
+      planMs,
+      planResult,
       ms: Date.now() - started,
       tools: result.steps,
       reply: result.reply.slice(0, 400),
@@ -80,6 +98,8 @@ async function probeAgent(input: string) {
     const message = error instanceof Error ? error.message : String(error);
     return {
       ok: false,
+      planMs,
+      planResult,
       ms: Date.now() - started,
       error: message.slice(0, 500),
       interim: sent,

@@ -84,7 +84,7 @@ async function chat(ctx: AgentContext): Promise<string> {
   );
 }
 
-async function makePlan(ctx: AgentContext) {
+export async function makePlan(ctx: AgentContext) {
   return completeJson(
     PlanSchema,
     [
