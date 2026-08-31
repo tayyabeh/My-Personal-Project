@@ -2,9 +2,9 @@
  * Diagnostics, guarded by the cron secret.
  *
  * Exists because Vercel's build and runtime logs are not reachable from
- * here, so a production-only failure — like the LLM rejecting every
- * request — could only be guessed at from silence. This asks the running
- * deployment what it actually sees.
+ * here, so a production-only failure — like every LLM call stalling —
+ * could only be guessed at from silence. This asks the running deployment
+ * what it actually sees.
  *
  * Reports whether each key is present, never its value.
  */
@@ -17,6 +17,39 @@ export const maxDuration = 60;
 
 function present(name: string): boolean {
   return optional(name).trim() !== '';
+}
+
+/**
+ * Which models this Gemini key may actually call.
+ *
+ * A wrong model name is invisible from outside — the request just fails
+ * or stalls — so it is worth asking directly.
+ */
+async function listGeminiModels(): Promise<string[] | string> {
+  const key = optional('GEMINI_API_KEY');
+  if (!key) return 'no key set';
+
+  try {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${key}&pageSize=100`;
+    const response = await fetch(url, { signal: AbortSignal.timeout(15_000) });
+
+    if (!response.ok) {
+      return `HTTP ${response.status}: ${(await response.text()).slice(0, 160)}`;
+    }
+
+    const json = (await response.json()) as {
+      models?: Array<{ name?: string; supportedGenerationMethods?: string[] }>;
+    };
+
+    return (json.models ?? [])
+      .filter((m) => (m.supportedGenerationMethods ?? []).includes('generateContent'))
+      .map((m) => (m.name ?? '').replace('models/', ''))
+      .filter((name) => name.includes('flash'))
+      .slice(0, 25);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return `could not list: ${message.slice(0, 160)}`;
+  }
 }
 
 export async function GET(request: Request): Promise<Response> {
@@ -45,27 +78,9 @@ export async function GET(request: Request): Promise<Response> {
     });
     llmResult = `OK in ${Date.now() - started}ms — "${reply.slice(0, 40)}"`;
   } catch (error) {
-    llmResult = `FAILED — ${(error instanceof Error ? error.message : String(error)).slice(0, 400)}`;
+    const message = error instanceof Error ? error.message : String(error);
+    llmResult = `FAILED — ${message.slice(0, 400)}`;
   }
 
-  // Which Gemini models this key can actually use. A wrong model name
-  // is invisible otherwise -- the call just fails or stalls.
-  let geminiModels: string[] | string;
-  try {
-    const key = optional('GEMINI_API_KEY');
-    const r = await fetch(
-      ,
-      { signal: AbortSignal.timeout(15_000) },
-    );
-    const j = (await r.json()) as { models?: Array<{ name?: string; supportedGenerationMethods?: string[] }> };
-    geminiModels = (j.models ?? [])
-      .filter((m) => (m.supportedGenerationMethods ?? []).includes('generateContent'))
-      .map((m) => (m.name ?? '').replace('models/', ''))
-      .filter((n) => n.includes('flash'))
-      .slice(0, 20);
-  } catch (error) {
-    geminiModels = ;
-  }
-
-  return Response.json({ env, llm: llmResult, geminiModels });
+  return Response.json({ env, llm: llmResult, geminiModels: await listGeminiModels() });
 }
