@@ -96,12 +96,35 @@ export async function handleIncoming(message: IncomingMessage): Promise<void> {
 
   const history = await recentTurns(message.whatsappMessageId);
 
-  const result = await handle({
-    to,
-    input: text,
-    history,
-    say: (interim: string) => messaging.sendText(interim, to),
-  });
+  /**
+   * Race the pipeline against the clock.
+   *
+   * Checking a deadline between steps is not enough — a single step can
+   * block past it, and Vercel then kills the function at 60 seconds. A
+   * killed function sends nothing, which to the user is identical to
+   * being ignored. Racing guarantees a reply goes out even when the work
+   * itself is still stuck.
+   */
+  const result = await Promise.race([
+    handle({
+      to,
+      input: text,
+      history,
+      say: (interim: string) => messaging.sendText(interim, to),
+    }),
+    new Promise<{ reply: string; steps: string[] }>((resolve) =>
+      setTimeout(
+        () =>
+          resolve({
+            reply:
+              'Isme waqt zyada lag raha hai. Thora simple bol kar dobara try karo, ' +
+              'ya thori der baad.',
+            steps: ['timed-out'],
+          }),
+        48_000,
+      ),
+    ),
+  ]);
 
   log.info('Agent finished', { steps: result.steps.join(' -> ') || 'none' });
 
