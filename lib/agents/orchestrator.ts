@@ -92,8 +92,7 @@ async function makePlan(ctx: AgentContext) {
           'jitne waqai chahiye. Ek kaafi ho to ek hi do.\n' +
           '- Ek hi agent ko baar baar mat bulao. Har agent khud apne tools ka loop ' +
           'chalata hai, to ek hi step mein wo dhoond bhi lega, kaam bhi kar lega aur bata ' +
-          'bhi dega. Naya step sirf tab jab DUSRE agent ki zaroorat ho.
-' +
+          'bhi dega. Naya step sirf tab jab DUSRE agent ki zaroorat ho.\n' +
           '- Tarteeb ahem hai. Pehle maloomat lao, phir us pe kaam karo. ' +
           '"AI updates search kar ke voice bana do" = research (dhoondo), phir coach (bolo).\n' +
           '- Har step ka "task" apne aap mein saaf ho. Agle agent ko pichle ka nateeja mil ' +
