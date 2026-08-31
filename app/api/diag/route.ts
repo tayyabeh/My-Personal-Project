@@ -87,12 +87,71 @@ async function probeAgent(input: string) {
   }
 }
 
+/**
+ * Time a plain call against a JSON-mode call.
+ *
+ * Every agent step goes through JSON mode, so if that path is slow while
+ * a plain call is fast, the whole pipeline inherits it — which is what
+ * the symptoms looked like.
+ */
+async function probeJson() {
+  const timed = async (label: string, run: () => Promise<string>) => {
+    const started = Date.now();
+    try {
+      const out = await run();
+      return { label, ms: Date.now() - started, ok: true, out: out.slice(0, 80) };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { label, ms: Date.now() - started, ok: false, out: message.slice(0, 200) };
+    }
+  };
+
+  const plain = await timed('plain', () =>
+    llm().complete([{ role: 'user', content: 'Reply with exactly: ok' }], { maxTokens: 10 }),
+  );
+
+  const json = await timed('json-mode', () =>
+    llm().complete(
+      [
+        { role: 'system', content: 'Reply ONLY with JSON: {"intent":"..."}' },
+        { role: 'user', content: 'mere pending tasks batao' },
+      ],
+      { json: true, maxTokens: 200 },
+    ),
+  );
+
+  const big = await timed('json-mode + long prompt', () =>
+    llm().complete(
+      [
+        {
+          role: 'system',
+          // Roughly the size of a real agent prompt.
+          content:
+            'Reply ONLY with JSON: {"thought":"","tool":null,"reply":"..."}\n\n' +
+            'Tools:\n' +
+            Array.from({ length: 8 }, (_, i) => `- tool_${i}(arg: string)\n    Ye tool kaam karta hai.`).join('\n'),
+        },
+        { role: 'user', content: 'mere pending tasks batao' },
+      ],
+      { json: true, maxTokens: 900 },
+    ),
+  );
+
+  return [plain, json, big];
+}
+
 export async function GET(request: Request): Promise<Response> {
   if (!cronRequestIsAuthorised(request)) {
     return new Response('Unauthorized', { status: 401 });
   }
 
-  const agentInput = new URL(request.url).searchParams.get('agent');
+  const params = new URL(request.url).searchParams;
+
+  if (params.get('json') !== null) {
+    return Response.json({ timings: await probeJson() });
+  }
+
+  const agentInput = params.get('agent');
   if (agentInput) {
     return Response.json({ agent: await probeAgent(agentInput) });
   }
