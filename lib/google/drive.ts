@@ -25,8 +25,12 @@ const EXPORTABLE: Record<string, string> = {
   'application/vnd.google-apps.presentation': 'text/plain',
 };
 
-export async function searchFiles(query: string, max = 10): Promise<DriveFile[]> {
-  const token = await accessToken();
+export async function searchFiles(
+  query: string,
+  max = 10,
+  signal?: AbortSignal,
+): Promise<DriveFile[]> {
+  const token = await accessToken(signal);
 
   // Escape single quotes, which would otherwise break Drive's query syntax.
   const safe = query.replace(/'/g, "\\'");
@@ -40,6 +44,7 @@ export async function searchFiles(query: string, max = 10): Promise<DriveFile[]>
 
   const response = await fetch(`${BASE}/files?${params}`, {
     headers: { Authorization: `Bearer ${token}` },
+    signal,
   });
 
   if (!response.ok) {
@@ -50,9 +55,53 @@ export async function searchFiles(query: string, max = 10): Promise<DriveFile[]>
   return json.files ?? [];
 }
 
+/** One file's metadata by id, so a tool can re-open a specific search result. */
+export async function getFileMetadata(id: string, signal?: AbortSignal): Promise<DriveFile | null> {
+  const token = await accessToken(signal);
+
+  const response = await fetch(
+    `${BASE}/files/${id}?fields=${encodeURIComponent('id,name,mimeType,modifiedTime,webViewLink')}`,
+    { headers: { Authorization: `Bearer ${token}` }, signal },
+  );
+  if (!response.ok) return null;
+  return (await response.json()) as DriveFile;
+}
+
+/** Files directly inside one folder. */
+export async function listFolder(
+  folderId: string,
+  max = 20,
+  signal?: AbortSignal,
+): Promise<DriveFile[]> {
+  const token = await accessToken(signal);
+
+  const params = new URLSearchParams({
+    q: `'${folderId}' in parents and trashed = false`,
+    pageSize: String(max),
+    orderBy: 'modifiedTime desc',
+    fields: 'files(id,name,mimeType,modifiedTime,webViewLink)',
+  });
+
+  const response = await fetch(`${BASE}/files?${params}`, {
+    headers: { Authorization: `Bearer ${token}` },
+    signal,
+  });
+
+  if (!response.ok) {
+    throw new Error(`Could not list folder: ${(await response.text()).slice(0, 200)}`);
+  }
+
+  const json = (await response.json()) as { files?: DriveFile[] };
+  return json.files ?? [];
+}
+
 /** Readable text from a file, capped so it cannot blow the token budget. */
-export async function readFile(file: DriveFile, maxChars = 6000): Promise<string | null> {
-  const token = await accessToken();
+export async function readFile(
+  file: DriveFile,
+  maxChars = 6000,
+  signal?: AbortSignal,
+): Promise<string | null> {
+  const token = await accessToken(signal);
   const exportAs = EXPORTABLE[file.mimeType];
 
   const url = exportAs
@@ -64,7 +113,7 @@ export async function readFile(file: DriveFile, maxChars = 6000): Promise<string
     return null;
   }
 
-  const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, signal });
   if (!response.ok) return null;
 
   const text = await response.text();

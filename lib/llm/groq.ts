@@ -81,7 +81,11 @@ function sleep(ms: number): Promise<void> {
  * Only sleeps when every key is cooling down AND the shortest wait fits
  * in what is left of the budget.
  */
-async function callWithRetry(path: string, build: (key: string) => RequestInit): Promise<Response> {
+async function callWithRetry(
+  path: string,
+  build: (key: string) => RequestInit,
+  signal?: AbortSignal,
+): Promise<Response> {
   const keys = apiKeys();
   if (keys.length === 0) throw new Error('No Groq API key configured');
 
@@ -117,7 +121,9 @@ async function callWithRetry(path: string, build: (key: string) => RequestInit):
     const key = ready[0];
     const response = await fetch(`${BASE_URL}${path}`, {
       ...build(key),
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      signal: signal
+        ? AbortSignal.any([AbortSignal.timeout(REQUEST_TIMEOUT_MS), signal])
+        : AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
 
     if (response.ok) return response;
@@ -162,11 +168,15 @@ export class GroqProvider implements LLMProvider {
       ...(opts.json ? { response_format: { type: 'json_object' } } : {}),
     });
 
-    const response = await callWithRetry('/chat/completions', (key) => ({
-      method: 'POST',
-      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-      body,
-    }));
+    const response = await callWithRetry(
+      '/chat/completions',
+      (key) => ({
+        method: 'POST',
+        headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+        body,
+      }),
+      opts.signal,
+    );
 
     const json = (await response.json()) as {
       choices?: Array<{ message?: { content?: string } }>;

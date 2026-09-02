@@ -2,22 +2,29 @@
  * What happens when a message arrives.
  *
  *   save + dedupe -> transcribe if voice -> load recent turns ->
- *   orchestrator picks an agent -> agent runs its tools -> reply
+ *   one agent loop over the flat tool list -> honest reply
  *
- * The intent switch that used to live here is gone. It could pick only
- * one label and run one function, which is why it could not follow up on
- * "ab inko calendar pe daal do" and instead replied with a promise it
- * never kept. Routing now lives in lib/agents/orchestrator.ts and the
- * work lives in the agents themselves.
+ * The orchestrator and its eight agents are gone. Routing is the tool
+ * list now (lib/tools/index.ts), and the loop (lib/loop.ts) runs it.
+ *
+ * The old Promise.race against a 48s timeout is gone too: its loser kept
+ * running and could still write to the DB after the user was told it
+ * timed out. A real AbortController now cancels every in-flight fetch
+ * when the deadline passes, and the run is recorded in `runs` for
+ * exactly-once processing.
  */
 import { messaging, type IncomingMessage } from '../messaging';
 import { db } from '../supabase';
 import { log } from '../logger';
 import { transcriber } from '../llm';
-import { handle } from '../agents/orchestrator';
-import { recentTurns } from '../agents/memory';
+import { runLoop } from '../loop';
+import { recentTurns } from '../memory';
+import { createRun, finishRun } from '../db/runs';
 import { getPending, setPending } from '../state';
 import { sendBookPodcast } from '../features/podcast';
+
+/** Everything must finish inside this; Vercel kills the function at 60s. */
+const DEADLINE_MS = 48_000;
 
 /**
  * Save the inbound message, and tell the caller whether this is the
@@ -84,7 +91,7 @@ export async function handleIncoming(message: IncomingMessage): Promise<void> {
     return;
   }
 
-  // A question we asked and are waiting on. Checked before routing so the
+  // A question we asked and are waiting on. Checked before the loop so the
   // answer is treated as an answer, not as a fresh request.
   const pending = await getPending();
   if (pending?.type === 'awaiting_reflection') {
@@ -94,44 +101,58 @@ export async function handleIncoming(message: IncomingMessage): Promise<void> {
     return;
   }
 
+  // One run per message. `runs` carries its own UNIQUE on the WhatsApp id,
+  // so even a caller that reaches here twice cannot process it twice.
+  const runId = crypto.randomUUID();
+  const claimed = await createRun({ id: runId, whatsappMessageId: message.whatsappMessageId, to, input: text });
+  if (!claimed) {
+    log.info('Run already claimed for this message', { id: message.whatsappMessageId });
+    return;
+  }
+
   const history = await recentTurns(message.whatsappMessageId);
 
-  /**
-   * Race the pipeline against the clock.
-   *
-   * Checking a deadline between steps is not enough — a single step can
-   * block past it, and Vercel then kills the function at 60 seconds. A
-   * killed function sends nothing, which to the user is identical to
-   * being ignored. Racing guarantees a reply goes out even when the work
-   * itself is still stuck.
-   */
-  const result = await Promise.race([
-    handle({
+  // Real cancellation. When the timer fires, every in-flight fetch a tool
+  // started is aborted — the reasoning stops instead of running on in the
+  // background and writing after the user was told it timed out.
+  const controller = new AbortController();
+  const deadline = Date.now() + DEADLINE_MS;
+  const timeoutId = setTimeout(() => controller.abort(new Error('deadline exceeded')), DEADLINE_MS);
+
+  try {
+    const result = await runLoop({
       to,
       input: text,
       history,
-      say: (interim: string) => messaging.sendText(interim, to),
-    }),
-    new Promise<{ reply: string; steps: string[] }>((resolve) =>
-      setTimeout(
-        () =>
-          resolve({
-            reply:
-              'Isme waqt zyada lag raha hai. Thora simple bol kar dobara try karo, ' +
-              'ya thori der baad.',
-            steps: ['timed-out'],
-          }),
-        48_000,
-      ),
-    ),
-  ]);
+      signal: controller.signal,
+      deadline,
+      runId,
+    });
 
-  log.info('Agent finished', { steps: result.steps.join(' -> ') || 'none' });
+    log.info('Loop finished', { steps: result.steps.join(' -> ') || 'none' });
+    await finishRun(runId, { status: 'done', reply: result.reply, steps: result.steps });
 
-  // An agent whose tool already sent something (a podcast voice note, the
-  // reflection question) may have nothing left to say.
-  if (result.reply.trim()) {
-    await messaging.sendText(result.reply, to);
+    // A tool that already sent something (a podcast voice note, the
+    // reflection question) may have nothing left to say.
+    if (result.reply.trim()) {
+      // The reply send deliberately gets no signal: aborting the reasoning
+      // must never stop us telling the user it was aborted.
+      await messaging.sendText(result.reply, to);
+    }
+  } catch (error) {
+    const aborted = controller.signal.aborted;
+    const detail = error instanceof Error ? error.message : String(error);
+    log.error('Loop threw', { aborted, error: detail.slice(0, 300) });
+    await finishRun(runId, { status: aborted ? 'timeout' : 'failed', error: detail.slice(0, 300) });
+
+    await messaging.sendText(
+      aborted
+        ? 'Isme waqt zyada lag raha hai. Thora simple bol kar dobara try karo, ya thori der baad.'
+        : 'Kuch gadbad ho gayi meri taraf se. Dobara bhejo?',
+      to,
+    );
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 

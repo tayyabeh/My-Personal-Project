@@ -52,3 +52,7 @@ model-creek-*.json
 vercel-env-paste.txt
 supabase-cron.sql
 scripts/_*.ts
+
+# Local tooling artifacts
+.serena/
+graphify-out/

@@ -6,17 +6,23 @@
  * replies never being sent — could only be guessed at from silence. This
  * asks the running deployment what it actually sees.
  *
- *   /api/diag              env + one LLM call + usable Gemini models
- *   /api/diag?agent=<text> runs the full orchestrator on <text> and
- *                          reports the tools it ran, timing, and any error
+ *   /api/diag               env + one LLM call + usable Gemini models
+ *   /api/diag?loop=<text>   runs the real agent loop on <text> and reports
+ *                           the tools it ran, the receipts, and the reply
+ *   /api/diag?claim=<text>  shows which lines of <text> the honesty filter
+ *                           keeps and which it strips, and why
+ *   /api/diag?logs=1        the latest persisted error logs
  *
- * Reports whether each key is present, never its value. The agent mode
+ * Reports whether each key is present, never its value. The loop mode
  * does not send anything to WhatsApp.
  */
 import { cronRequestIsAuthorised } from '@/lib/cron-auth';
 import { optional } from '@/lib/env';
 import { llm } from '@/lib/llm';
-import { handle, makePlan } from '@/lib/agents/orchestrator';
+import { runLoop } from '@/lib/loop';
+import { checkSentence } from '@/lib/honesty';
+import { recentLogs } from '@/lib/db/log-store';
+import type { Receipt } from '@/lib/tools/types';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -53,74 +59,54 @@ async function listGeminiModels(): Promise<string[] | string> {
   }
 }
 
-/** Run the real pipeline, capturing whatever it does or throws. */
-async function probeAgent(input: string) {
+/** Run the real loop, capturing whatever it does or throws. Sends nothing. */
+async function probeLoop(input: string) {
   const started = Date.now();
-  const sent: string[] = [];
-
-  // Time the planner on its own first. Even a greeting, which needs no
-  // agent at all, was timing out — so the split matters.
-  const planStarted = Date.now();
-  let planMs = -1;
-  let planResult = 'not reached';
-  try {
-    const plan = await makePlan({ to: 'diag', input, history: [], say: async () => {} });
-    planMs = Date.now() - planStarted;
-    planResult = plan.ok
-      ? `steps: ${plan.data.steps.map((s) => s.agent).join(' -> ') || '(none)'}`
-      : `plan failed: ${plan.error.slice(0, 120)}`;
-  } catch (error) {
-    planMs = Date.now() - planStarted;
-    planResult = `threw: ${(error instanceof Error ? error.message : String(error)).slice(0, 160)}`;
-  }
+  const controller = new AbortController();
+  const deadline = Date.now() + 35_000;
+  const timeoutId = setTimeout(() => controller.abort(new Error('probe deadline')), 35_000);
 
   try {
-    // Race so the probe reports what it learned instead of dying with it.
-    // Losing the diagnosis to the very timeout being diagnosed is exactly
-    // how this stayed opaque for so long.
-    const result = await Promise.race([
-      handle({
-        to: '923273844643',
-        input,
-        history: [],
-        // Capture interim messages instead of sending them.
-        say: async (text: string) => {
-          sent.push(text.slice(0, 80));
-        },
-      }),
-      new Promise<{ reply: string; steps: string[] }>((resolve) =>
-        setTimeout(() => resolve({ reply: '(probe timed out at 35s)', steps: ['PROBE-TIMEOUT'] }), 35_000),
-      ),
-    ]);
+    const result = await runLoop({
+      to: 'diag',
+      input,
+      history: [],
+      signal: controller.signal,
+      deadline,
+      runId: crypto.randomUUID(),
+    });
 
     return {
       ok: true,
-      planMs,
-      planResult,
       ms: Date.now() - started,
       tools: result.steps,
-      reply: result.reply.slice(0, 400),
-      interim: sent,
+      reply: result.reply.slice(0, 500),
+      receipts: result.receipts.map((r: Receipt) => ({
+        tool: r.tool,
+        ok: r.ok,
+        effect: r.effect,
+        factLine: r.factLine.slice(0, 160),
+        numbers: r.numbers,
+      })),
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return {
       ok: false,
-      planMs,
-      planResult,
+      aborted: controller.signal.aborted,
       ms: Date.now() - started,
       error: message.slice(0, 500),
-      interim: sent,
     };
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 
 /**
  * Time a plain call against a JSON-mode call.
  *
- * Every agent step goes through JSON mode, so if that path is slow while
- * a plain call is fast, the whole pipeline inherits it — which is what
- * the symptoms looked like.
+ * Every loop step goes through JSON mode, so if that path is slow while a
+ * plain call is fast, the whole pipeline inherits it.
  */
 async function probeJson() {
   const timed = async (label: string, run: () => Promise<string>) => {
@@ -148,24 +134,7 @@ async function probeJson() {
     ),
   );
 
-  const big = await timed('json-mode + long prompt', () =>
-    llm().complete(
-      [
-        {
-          role: 'system',
-          // Roughly the size of a real agent prompt.
-          content:
-            'Reply ONLY with JSON: {"thought":"","tool":null,"reply":"..."}\n\n' +
-            'Tools:\n' +
-            Array.from({ length: 8 }, (_, i) => `- tool_${i}(arg: string)\n    Ye tool kaam karta hai.`).join('\n'),
-        },
-        { role: 'user', content: 'mere pending tasks batao' },
-      ],
-      { json: true, maxTokens: 900 },
-    ),
-  );
-
-  return [plain, json, big];
+  return [plain, json];
 }
 
 export async function GET(request: Request): Promise<Response> {
@@ -179,27 +148,30 @@ export async function GET(request: Request): Promise<Response> {
     return Response.json({ timings: await probeJson() });
   }
 
-  // Planner only. The agent probe runs it and then runs it again inside
-  // handle(), which muddies the timing when something hangs.
-  const planInput = params.get('plan');
-  if (planInput) {
-    const started = Date.now();
-    try {
-      const plan = await makePlan({ to: 'diag', input: planInput, history: [], say: async () => {} });
-      return Response.json({
-        ms: Date.now() - started,
-        ok: plan.ok,
-        result: plan.ok ? plan.data : plan.error.slice(0, 300),
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return Response.json({ ms: Date.now() - started, ok: false, threw: message.slice(0, 300) });
-    }
+  // Honesty filter probe. With no receipts supplied, any completion or
+  // number claim strips (nothing backs it) and promise phrasing always
+  // strips — the worst case that proves the deterministic rules.
+  const claim = params.get('claim');
+  if (claim) {
+    const write = params.get('write') !== null;
+    const numbers = (params.get('numbers') ?? '')
+      .split(',')
+      .map((n) => Number(n.trim()))
+      .filter((n) => Number.isFinite(n));
+    const receipts: Receipt[] = write || numbers.length
+      ? [{ tool: 'diag', ok: true, effect: write ? 'write' : 'read', factLine: '', entities: [], numbers, observation: '' }]
+      : [];
+    const lines = claim.split('\n').map((line) => checkSentence(line, receipts));
+    return Response.json({ claim, receipts: receipts.length, lines });
   }
 
-  const agentInput = params.get('agent');
-  if (agentInput) {
-    return Response.json({ agent: await probeAgent(agentInput) });
+  if (params.get('logs') !== null) {
+    return Response.json({ logs: await recentLogs(50) });
+  }
+
+  const loopInput = params.get('loop');
+  if (loopInput) {
+    return Response.json({ loop: await probeLoop(loopInput) });
   }
 
   const env = {
@@ -209,8 +181,7 @@ export async function GET(request: Request): Promise<Response> {
     keys: {
       GEMINI_API_KEY: present('GEMINI_API_KEY'),
       GROQ_API_KEY: present('GROQ_API_KEY'),
-      // How many keys production can actually rotate between.
-      groqKeyCount: ['GROQ_API_KEY','GROQ_API_KEY_2','GROQ_API_KEY_3','GROQ_API_KEY_4','GROQ_API_KEY_5'].filter(present).length,
+      groqKeyCount: ['GROQ_API_KEY', 'GROQ_API_KEY_2', 'GROQ_API_KEY_3', 'GROQ_API_KEY_4', 'GROQ_API_KEY_5'].filter(present).length,
       SUPABASE_SERVICE_ROLE_KEY: present('SUPABASE_SERVICE_ROLE_KEY'),
       WHATSAPP_ACCESS_TOKEN: present('WHATSAPP_ACCESS_TOKEN'),
       TAVILY_API_KEY: present('TAVILY_API_KEY'),

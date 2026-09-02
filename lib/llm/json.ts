@@ -30,7 +30,7 @@ function stripFences(raw: string): string {
 export async function completeJson<T>(
   schema: ZodType<T>,
   messages: Message[],
-  opts: { temperature?: number; maxTokens?: number } = {},
+  opts: { temperature?: number; maxTokens?: number; signal?: AbortSignal } = {},
 ): Promise<JsonResult<T>> {
   let conversation = [...messages];
   let lastError = 'unknown error';

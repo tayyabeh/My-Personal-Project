@@ -190,3 +190,40 @@ alter table records enable row level security;
 
 -- Tayyab's own jamaat timings; null falls back to the calculated API times
 alter table settings add column if not exists prayer_times jsonb;
+
+-- ---------------------------------------------------------------------
+-- Phase 1: honesty core (runs, write_ops, tts voice)
+-- ---------------------------------------------------------------------
+create table if not exists runs (
+  id                   uuid primary key default gen_random_uuid(),
+  whatsapp_message_id  text not null unique,
+  to_number            text not null,
+  input                text not null,
+  status               text not null default 'running'
+                         check (status in ('running', 'done', 'failed', 'timeout')),
+  reply                text,
+  steps                jsonb not null default '[]'::jsonb,
+  error                text,
+  started_at           timestamptz not null default now(),
+  finished_at          timestamptz,
+  created_at           timestamptz not null default now()
+);
+create index if not exists runs_started_idx on runs (started_at desc);
+alter table runs enable row level security;
+
+create table if not exists write_ops (
+  id              uuid primary key default gen_random_uuid(),
+  run_id          uuid not null references runs(id) on delete cascade,
+  idempotency_key text not null unique,
+  tool            text not null,
+  effect          text not null,
+  target          text,
+  result          jsonb not null default '{}'::jsonb,
+  ok              boolean not null default false,
+  error           text,
+  created_at      timestamptz not null default now()
+);
+create index if not exists write_ops_run_idx on write_ops (run_id, created_at desc);
+alter table write_ops enable row level security;
+
+alter table settings add column if not exists tts_voice text not null default 'diana';

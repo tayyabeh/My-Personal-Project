@@ -105,7 +105,7 @@ export async function isConnected(): Promise<boolean> {
  * A fresh access token. These last about an hour, so we mint one per use
  * rather than caching across invocations.
  */
-export async function accessToken(): Promise<string> {
+export async function accessToken(signal?: AbortSignal): Promise<string> {
   const { data, error } = await db()
     .from('settings')
     .select('google_refresh_token')
@@ -128,6 +128,7 @@ export async function accessToken(): Promise<string> {
       client_secret: clientSecret(),
       grant_type: 'refresh_token',
     }),
+    signal,
   });
 
   if (!response.ok) {

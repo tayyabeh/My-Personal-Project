@@ -10,8 +10,8 @@
  * more tightly than requests, and long histories are what will rate-limit
  * this, not message volume.
  */
-import { db } from '../supabase';
-import type { Turn } from './types';
+import { db } from './supabase';
+import type { Turn } from './tools/types';
 
 const MAX_TURNS = 8;
 const MAX_CHARS_PER_TURN = 500;

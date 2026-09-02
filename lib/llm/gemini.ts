@@ -96,7 +96,9 @@ export class GeminiProvider implements LLMProvider {
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      signal: opts.signal
+        ? AbortSignal.any([AbortSignal.timeout(REQUEST_TIMEOUT_MS), opts.signal])
+        : AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       body: JSON.stringify({
         contents,
         ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}),

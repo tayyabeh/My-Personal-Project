@@ -21,8 +21,9 @@ export async function createEvent(
   title: string,
   startsAt: Date,
   durationMinutes = 30,
+  signal?: AbortSignal,
 ): Promise<CalendarEvent> {
-  const token = await accessToken();
+  const token = await accessToken(signal);
   const endsAt = new Date(startsAt.getTime() + durationMinutes * 60 * 1000);
 
   const response = await fetch(`${BASE}/calendars/primary/events`, {
@@ -34,6 +35,7 @@ export async function createEvent(
       end: { dateTime: endsAt.toISOString(), timeZone: TIMEZONE },
       reminders: { useDefault: false, overrides: [{ method: 'popup', minutes: 5 }] },
     }),
+    signal,
   });
 
   if (!response.ok) {
@@ -56,8 +58,8 @@ export async function createEvent(
 }
 
 /** Events starting between now and `hours` from now. */
-export async function upcomingEvents(hours = 24): Promise<CalendarEvent[]> {
-  const token = await accessToken();
+export async function upcomingEvents(hours = 24, signal?: AbortSignal): Promise<CalendarEvent[]> {
+  const token = await accessToken(signal);
   const now = new Date();
   const until = new Date(now.getTime() + hours * 60 * 60 * 1000);
 
@@ -71,6 +73,7 @@ export async function upcomingEvents(hours = 24): Promise<CalendarEvent[]> {
 
   const response = await fetch(`${BASE}/calendars/primary/events?${params}`, {
     headers: { Authorization: `Bearer ${token}` },
+    signal,
   });
 
   if (!response.ok) {
@@ -107,8 +110,12 @@ export async function upcomingEvents(hours = 24): Promise<CalendarEvent[]> {
  * the following date. Passing the same date twice creates a zero-length
  * event that does not render.
  */
-export async function createAllDayEvent(title: string, date: string): Promise<string | null> {
-  const token = await accessToken();
+export async function createAllDayEvent(
+  title: string,
+  date: string,
+  signal?: AbortSignal,
+): Promise<string | null> {
+  const token = await accessToken(signal);
 
   const next = new Date(`${date}T00:00:00Z`);
   next.setUTCDate(next.getUTCDate() + 1);
@@ -123,6 +130,7 @@ export async function createAllDayEvent(title: string, date: string): Promise<st
       end: { date: endDate },
       transparency: 'transparent', // a task should not mark you busy
     }),
+    signal,
   });
 
   if (!response.ok) return null;
@@ -131,12 +139,13 @@ export async function createAllDayEvent(title: string, date: string): Promise<st
 }
 
 /** Remove an event, used when a task is deleted. Never throws. */
-export async function deleteEvent(eventId: string): Promise<void> {
+export async function deleteEvent(eventId: string, signal?: AbortSignal): Promise<void> {
   try {
-    const token = await accessToken();
+    const token = await accessToken(signal);
     await fetch(`${BASE}/calendars/primary/events/${eventId}`, {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${token}` },
+      signal,
     });
   } catch {
     // A stale calendar entry is not worth failing a delete over.
@@ -154,8 +163,9 @@ export async function findEvents(
   query: string,
   daysAhead = 120,
   daysBack = 7,
+  signal?: AbortSignal,
 ): Promise<CalendarEvent[]> {
-  const token = await accessToken();
+  const token = await accessToken(signal);
   const now = Date.now();
 
   const params = new URLSearchParams({
@@ -169,6 +179,7 @@ export async function findEvents(
 
   const response = await fetch(`${BASE}/calendars/primary/events?${params}`, {
     headers: { Authorization: `Bearer ${token}` },
+    signal,
   });
   if (!response.ok) throw new Error(`Calendar search failed: ${(await response.text()).slice(0, 160)}`);
 
@@ -197,8 +208,9 @@ export async function findEvents(
 export async function updateEvent(
   eventId: string,
   changes: { title?: string; startsAt?: Date; durationMinutes?: number },
+  signal?: AbortSignal,
 ): Promise<boolean> {
-  const token = await accessToken();
+  const token = await accessToken(signal);
 
   const body: Record<string, unknown> = {};
   if (changes.title) body.summary = changes.title;
@@ -215,6 +227,7 @@ export async function updateEvent(
     method: 'PATCH',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
+    signal,
   });
 
   return response.ok;

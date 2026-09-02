@@ -32,12 +32,16 @@ function header(
  *   'newer_than:1d category:primary'
  *   'is:unread -category:promotions'
  */
-export async function searchMail(query: string, max = 12): Promise<MailSummary[]> {
-  const token = await accessToken();
+export async function searchMail(
+  query: string,
+  max = 12,
+  signal?: AbortSignal,
+): Promise<MailSummary[]> {
+  const token = await accessToken(signal);
 
   const listResponse = await fetch(
     `${BASE}/messages?${new URLSearchParams({ q: query, maxResults: String(max) })}`,
-    { headers: { Authorization: `Bearer ${token}` } },
+    { headers: { Authorization: `Bearer ${token}` }, signal },
   );
 
   if (!listResponse.ok) {
@@ -57,6 +61,7 @@ export async function searchMail(query: string, max = 12): Promise<MailSummary[]
 
       const response = await fetch(`${BASE}/messages/${id}?${params}`, {
         headers: { Authorization: `Bearer ${token}` },
+        signal,
       });
       if (!response.ok) return null;
 
@@ -80,8 +85,13 @@ export async function searchMail(query: string, max = 12): Promise<MailSummary[]
 }
 
 /** Save a draft reply. Never sends — sending requires explicit confirmation. */
-export async function createDraft(to: string, subject: string, body: string): Promise<string> {
-  const token = await accessToken();
+export async function createDraft(
+  to: string,
+  subject: string,
+  body: string,
+  signal?: AbortSignal,
+): Promise<string> {
+  const token = await accessToken(signal);
 
   const raw = [`To: ${to}`, `Subject: ${subject}`, 'Content-Type: text/plain; charset=utf-8', '', body].join(
     '\r\n',
@@ -97,6 +107,7 @@ export async function createDraft(to: string, subject: string, body: string): Pr
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ message: { raw: encoded } }),
+    signal,
   });
 
   if (!response.ok) {
@@ -119,16 +130,21 @@ export async function createDraft(to: string, subject: string, body: string): Pr
  * walk it preferring text/plain, falling back to text/html with the tags
  * stripped, because newsletters are frequently HTML-only.
  */
-export async function readMessage(id: string, maxChars = 3000): Promise<{
+export async function readMessage(
+  id: string,
+  maxChars = 3000,
+  signal?: AbortSignal,
+): Promise<{
   from: string;
   subject: string;
   date: string;
   body: string;
 } | null> {
-  const token = await accessToken();
+  const token = await accessToken(signal);
 
   const response = await fetch(`${BASE}/messages/${id}?format=full`, {
     headers: { Authorization: `Bearer ${token}` },
+    signal,
   });
   if (!response.ok) return null;
 
@@ -201,13 +217,15 @@ export async function modifyLabels(
   id: string,
   add: string[] = [],
   remove: string[] = [],
+  signal?: AbortSignal,
 ): Promise<boolean> {
-  const token = await accessToken();
+  const token = await accessToken(signal);
 
   const response = await fetch(`${BASE}/messages/${id}/modify`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ addLabelIds: add, removeLabelIds: remove }),
+    signal,
   });
 
   if (!response.ok) {
@@ -224,11 +242,42 @@ export async function modifyLabels(
  * Move a message to Trash. Recoverable for 30 days in Gmail; this never
  * deletes permanently, which is not something the assistant should do.
  */
-export async function trashMessage(id: string): Promise<boolean> {
-  const token = await accessToken();
+export async function trashMessage(id: string, signal?: AbortSignal): Promise<boolean> {
+  const token = await accessToken(signal);
   const response = await fetch(`${BASE}/messages/${id}/trash`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}` },
+    signal,
   });
   return response.ok;
+}
+
+/**
+ * Every label in the mailbox, system and user-created alike.
+ *
+ * Nothing called this before, so the assistant had no way to know what
+ * labels existed at all — `list_labels` needs it to answer honestly
+ * instead of guessing a name.
+ */
+export interface GmailLabel {
+  id: string;
+  name: string;
+  type: string;
+}
+
+export async function listLabels(signal?: AbortSignal): Promise<GmailLabel[]> {
+  const token = await accessToken(signal);
+  const response = await fetch(`${BASE}/labels`, {
+    headers: { Authorization: `Bearer ${token}` },
+    signal,
+  });
+
+  if (!response.ok) {
+    throw new Error(`Could not list Gmail labels: ${(await response.text()).slice(0, 200)}`);
+  }
+
+  const json = (await response.json()) as {
+    labels?: Array<{ id: string; name: string; type: string }>;
+  };
+  return json.labels ?? [];
 }

@@ -14,6 +14,7 @@ import { TIMEZONE } from './env';
 import { runMorningGreeting, runNightSummary, runCheckIn } from './features/summary';
 import { runWeeklyReview } from './features/weekly-review';
 import { resurfaceDue } from './features/learnings';
+import { pruneLogs } from './db/log-store';
 
 /** Minutes since local midnight, plus the local weekday. */
 function localNow(): { minutes: number; weekday: number } {
@@ -127,6 +128,11 @@ export async function runTick(): Promise<string> {
     // 6 days, so it cannot fire twice on the same weekly slot.
     await maybe('weekly', settings.weekly_time as string, 24 * 6, runWeeklyReview);
   }
+
+  // Housekeeping, every tick: keep the persisted error log bounded.
+  await pruneLogs().catch((error) =>
+    log.warn('Could not prune logs', { error: error instanceof Error ? error.message : String(error) }),
+  );
 
   return fired.length === 0 ? 'nothing due' : fired.join('; ');
 }

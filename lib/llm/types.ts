@@ -18,6 +18,12 @@ export interface CompleteOptions {
   json?: boolean;
   temperature?: number;
   maxTokens?: number;
+  /**
+   * Cancels the request when the caller's run is aborted (deadline, or a
+   * tool cancelling itself). Combined with the provider's own per-request
+   * timeout, never replacing it — either one firing ends the call.
+   */
+  signal?: AbortSignal;
 }
 
 export interface LLMProvider {
