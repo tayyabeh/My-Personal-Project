@@ -88,6 +88,41 @@ export const QUOTES: Quote[] = [
     who: 'Alan Kay',
     source: 'Talk at Xerox PARC, 1971',
   },
+  {
+    text: 'Sitaron se aage jahan aur bhi hain, abhi ishq ke imtihan aur bhi hain.',
+    who: 'Allama Muhammad Iqbal',
+    source: 'Bal-e-Jibril',
+  },
+  {
+    text: 'Khudi ko kar buland itna ke har taqdeer se pehle, Khuda bande se khud pooche bata teri raza kya hai.',
+    who: 'Allama Muhammad Iqbal',
+    source: 'Bal-e-Jibril',
+  },
+  {
+    text: 'Yaqeen muhkam, amal paiham, mohabbat fatah-e-aalam — jihad-e-zindagani mein hain ye mardon ki shamsheerein.',
+    who: 'Allama Muhammad Iqbal',
+    source: 'Bal-e-Jibril',
+  },
+  {
+    text: 'Your most unhappy customers are your greatest source of learning.',
+    who: 'Bill Gates',
+    source: 'Business @ the Speed of Thought, 1999',
+  },
+  {
+    text: 'We are stubborn on vision. We are flexible on details.',
+    who: 'Jeff Bezos (Amazon)',
+    source: 'Interview / shareholder letters',
+  },
+  {
+    text: 'The most successful people I know believe in themselves almost to the point of delusion.',
+    who: 'Sam Altman (OpenAI)',
+    source: 'Essay, "How To Be Successful", 2019',
+  },
+  {
+    text: 'If you are not embarrassed by the first version of your product, you have launched too late.',
+    who: 'Reid Hoffman (LinkedIn)',
+    source: 'Widely quoted from his talks',
+  },
 ];
 
 /**
