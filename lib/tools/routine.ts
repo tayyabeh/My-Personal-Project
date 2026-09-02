@@ -9,7 +9,7 @@
  */
 import { z } from 'zod';
 import { db } from '../supabase';
-import { pendingTasks, todayLocal } from '../context';
+import { pendingTasks, todayLocal, type TaskRow } from '../context';
 import { extractTasks, saveTasks, matchCompletion, completeTask } from '../features/tasks';
 import { createAllDayEvent, deleteEvent } from '../google/calendar';
 import { insertOnce } from '../db/idempotency';
@@ -140,61 +140,109 @@ async function findPending(idOrText: string) {
   return tasks.find((t) => t.title.toLowerCase().includes(lower)) ?? null;
 }
 
-const cancelTask: Tool<{ id: string }> = {
+/**
+ * Resolve one call's targets: every pending task when `all`, otherwise
+ * each id/title in `ids` matched to a pending task. Batching matters —
+ * cancelling six tasks one-per-call once cost a dozen LLM steps and could
+ * drain the whole per-minute token budget in one burst; here it is one
+ * call, one reply.
+ */
+async function resolveTargets(
+  ids: string[] | undefined,
+  all: boolean | undefined,
+): Promise<{ tasks: TaskRow[]; missing: string[] }> {
+  const pending = await pendingTasks();
+  if (all) return { tasks: pending, missing: [] };
+
+  const tasks: TaskRow[] = [];
+  const missing: string[] = [];
+  for (const id of ids ?? []) {
+    const byId = pending.find((t) => t.id === id);
+    const match = byId ?? pending.find((t) => t.title.toLowerCase().includes(id.toLowerCase()));
+    if (match && !tasks.some((t) => t.id === match.id)) tasks.push(match);
+    else if (!match) missing.push(id);
+  }
+  return { tasks, missing };
+}
+
+const BatchSchema = z.object({
+  ids: z.array(z.string().min(1).max(200)).max(50).optional(),
+  all: z.boolean().optional(),
+});
+
+const cancelTask: Tool<{ ids?: string[]; all?: boolean }> = {
   name: 'cancel_task',
   description:
-    'Ek task cancel karo (done nahi — chhod diya). id list_tasks se lo, ya title ka koi hissa do.',
-  args: 'id: string (id ya title ka hissa)',
-  schema: z.object({ id: z.string().min(1).max(200) }),
-  async run({ id }, ctx) {
-    const task = await findPending(id);
-    if (!task) return fail('cancel_task', `Is se koi pending task nahi mila: ${id}`);
+    'Ek ya zyada tasks cancel karo (done nahi — chhod diya) EK hi call mein. ids mein har task ' +
+    'ki id ya title ka hissa do. Sare pending cancel karne ho to all: true. "sab cancel kar do" ' +
+    'jaisi baat pe ek hi dafa ye chalao — har task ke liye alag call MAT karo.',
+  args: 'ids?: string[] (id ya title ke hisse), all?: boolean',
+  schema: BatchSchema,
+  async run({ ids, all }, ctx) {
+    const { tasks, missing } = await resolveTargets(ids, all);
+    if (tasks.length === 0) return fail('cancel_task', `Koi pending task nahi mila: ${(ids ?? []).join(', ') || '(none)'}`);
 
-    const { ok: done } = await insertOnce(
-      `${ctx.runId}:cancel_task:${task.id}`,
-      { runId: ctx.runId, tool: 'cancel_task', effect: 'write', target: task.id },
+    const idList = tasks.map((t) => t.id).sort();
+    const { ok: done, result } = await insertOnce(
+      `${ctx.runId}:cancel_task:${idList.join(',')}`,
+      { runId: ctx.runId, tool: 'cancel_task', effect: 'write' },
       async () => {
-        const { error } = await db()
-          .from('tasks')
-          .update({ status: 'cancelled' })
-          .eq('id', task.id);
+        const { error } = await db().from('tasks').update({ status: 'cancelled' }).in('id', idList);
         if (error) return { ok: false, result: null, error: error.message };
-        await removeTaskEvent(task.id, ctx.signal);
-        return { ok: true, result: { id: task.id } };
+        for (const t of tasks) await removeTaskEvent(t.id, ctx.signal);
+        return { ok: true, result: { count: tasks.length } };
       },
     );
 
-    return done
-      ? ok({ tool: 'cancel_task', effect: 'write', factLine: `"${task.title}" cancel kar diya.`, entities: [task.title] })
-      : fail('cancel_task', `"${task.title}" cancel nahi ho saka.`);
+    if (!done) return fail('cancel_task', 'Cancel nahi ho saka.');
+    const count = (result as { count: number })?.count ?? tasks.length;
+    return ok({
+      tool: 'cancel_task',
+      effect: 'write',
+      factLine:
+        `${count} task cancel kar diye: ${tasks.map((t) => `"${t.title}"`).join(', ')}.` +
+        (missing.length ? ` (Ye nahi mile: ${missing.join(', ')}.)` : ''),
+      entities: tasks.map((t) => t.title),
+      numbers: [count],
+    });
   },
 };
 
-const deleteTask: Tool<{ id: string }> = {
+const deleteTask: Tool<{ ids?: string[]; all?: boolean }> = {
   name: 'delete_task',
   description:
-    'Ek task hamesha ke liye mita do. id list_tasks se lo, ya title ka koi hissa do. ' +
-    'Calendar wala event bhi hat jayega.',
-  args: 'id: string (id ya title ka hissa)',
-  schema: z.object({ id: z.string().min(1).max(200) }),
-  async run({ id }, ctx) {
-    const task = await findPending(id);
-    if (!task) return fail('delete_task', `Is se koi pending task nahi mila: ${id}`);
+    'Ek ya zyada tasks hamesha ke liye mita do EK hi call mein. ids mein id ya title ka hissa ' +
+    'do. Sare pending mitane ho to all: true. Calendar ke events bhi hat jayenge. "sab delete ' +
+    'kar do" pe ek hi dafa ye chalao — har task ke liye alag call MAT karo.',
+  args: 'ids?: string[] (id ya title ke hisse), all?: boolean',
+  schema: BatchSchema,
+  async run({ ids, all }, ctx) {
+    const { tasks, missing } = await resolveTargets(ids, all);
+    if (tasks.length === 0) return fail('delete_task', `Koi pending task nahi mila: ${(ids ?? []).join(', ') || '(none)'}`);
 
-    const { ok: done } = await insertOnce(
-      `${ctx.runId}:delete_task:${task.id}`,
-      { runId: ctx.runId, tool: 'delete_task', effect: 'write', target: task.id },
+    const idList = tasks.map((t) => t.id).sort();
+    const { ok: done, result } = await insertOnce(
+      `${ctx.runId}:delete_task:${idList.join(',')}`,
+      { runId: ctx.runId, tool: 'delete_task', effect: 'write' },
       async () => {
-        await removeTaskEvent(task.id, ctx.signal);
-        const { error } = await db().from('tasks').delete().eq('id', task.id);
+        for (const t of tasks) await removeTaskEvent(t.id, ctx.signal);
+        const { error } = await db().from('tasks').delete().in('id', idList);
         if (error) return { ok: false, result: null, error: error.message };
-        return { ok: true, result: { id: task.id } };
+        return { ok: true, result: { count: tasks.length } };
       },
     );
 
-    return done
-      ? ok({ tool: 'delete_task', effect: 'write', factLine: `"${task.title}" delete kar diya.`, entities: [task.title] })
-      : fail('delete_task', `"${task.title}" delete nahi ho saka.`);
+    if (!done) return fail('delete_task', 'Delete nahi ho saka.');
+    const count = (result as { count: number })?.count ?? tasks.length;
+    return ok({
+      tool: 'delete_task',
+      effect: 'write',
+      factLine:
+        `${count} task delete kar diye: ${tasks.map((t) => `"${t.title}"`).join(', ')}.` +
+        (missing.length ? ` (Ye nahi mile: ${missing.join(', ')}.)` : ''),
+      entities: tasks.map((t) => t.title),
+      numbers: [count],
+    });
   },
 };
 
