@@ -118,11 +118,22 @@ export async function runLoop(input: LoopInput): Promise<LoopResult> {
 
     if (!result.ok) {
       log.error('Loop step failed', { step, error: result.error });
-      const rateLimited = /rate limit|429|quota|exceeded/i.test(result.error);
+
+      // A spent quota or a temporary backend outage is not a
+      // misunderstanding. Saying "samajh nahi aaya" for it sends the user
+      // off rephrasing a message that was perfectly clear — worse than
+      // saying nothing useful. Both providers being momentarily down (a
+      // Groq 429 falling back to a Gemini 503, say) lands here, so the
+      // vocabulary covers rate limits AND transient backend failures.
+      const rateLimited = /rate limit|429|quota|exceeded|limit/i.test(result.error);
+      const transient = /timeout|aborted|overloaded|high demand|unavailable|HTTP 5\d\d|502|503|500/i.test(result.error);
+
       return {
         reply: rateLimited
           ? 'Abhi AI ki limit khatam ho gayi hai (roz ki had). Thori der baad ya kal dobara bolo.'
-          : 'Samajh nahi aaya. Thora aur wazeh bolo?',
+          : transient
+            ? 'AI abhi thodi busy hai — samajh gaya tha, bas jawab nahi ban paya. Thori der baad wahi message dobara bhej do.'
+            : 'Samajh nahi aaya. Thora aur wazeh bolo?',
         receipts,
         steps,
       };
