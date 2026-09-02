@@ -5,6 +5,7 @@
  * Hobby plan caps cron at once per day, which is useless for this.
  */
 import { cronRequestIsAuthorised } from '@/lib/cron-auth';
+import { env } from '@/lib/env';
 import { db } from '@/lib/supabase';
 import { log } from '@/lib/logger';
 import { messaging, templates } from '@/lib/messaging';
@@ -16,6 +17,13 @@ export const maxDuration = 60;
 async function run(request: Request): Promise<Response> {
   if (!cronRequestIsAuthorised(request)) {
     return new Response('Unauthorized', { status: 401 });
+  }
+
+  // Kill switch. 200 rather than an error so pg_cron does not fill its own
+  // run history with failures for the whole shutdown.
+  if (!env.assistantEnabled()) {
+    log.info('Assistant disabled — skipped reminder job');
+    return Response.json({ ok: true, result: 'assistant disabled' });
   }
 
   try {

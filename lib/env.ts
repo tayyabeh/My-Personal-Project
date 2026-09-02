@@ -47,6 +47,11 @@ export const env = {
 
   cronSecret: () => required('CRON_SECRET'),
   appBaseUrl: () => optional('APP_BASE_URL', 'http://localhost:3000'),
+
+  // The kill switch. Only the exact string 'false' turns the assistant off,
+  // so a variable that is missing or misspelt can never silently shut down a
+  // working deployment.
+  assistantEnabled: () => optional('ASSISTANT_ENABLED', 'true') !== 'false',
 };
 
 /** Our timezone. Fixed at UTC+5 with no daylight saving. */

@@ -67,6 +67,13 @@ function signatureIsValid(rawBody: string, header: string | null): boolean {
 }
 
 export async function POST(request: Request): Promise<Response> {
+  // Kill switch. Still a 200: anything else and Meta retries the message,
+  // and eventually disables the webhook subscription altogether.
+  if (!env.assistantEnabled()) {
+    log.info('Assistant disabled — dropped incoming webhook');
+    return new Response('OK', { status: 200 });
+  }
+
   // Read the body as raw text, because the signature is computed over
   // the exact bytes Meta sent. Re-serialising parsed JSON would not match.
   const rawBody = await request.text();
