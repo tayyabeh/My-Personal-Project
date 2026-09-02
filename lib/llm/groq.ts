@@ -1,10 +1,12 @@
 /**
  * Groq provider, with key rotation.
  *
- * The free tier allows 8,000 tokens per minute per key, and one agent
- * message — a planner call plus a call per step — can spend that alone.
- * Several keys each carry their own budget, so when one is rate limited
- * the next takes over immediately instead of anyone waiting.
+ * The free tier allows 6,000 tokens per minute per account, and a single
+ * message — several loop steps, each resending the whole tool list — can
+ * spend that alone. Several keys from separate accounts each carry their
+ * own budget, so when one is rate limited the next takes over immediately
+ * instead of anyone waiting. (Keys from the SAME account share one budget,
+ * so rotation only helps when the keys are from different accounts.)
  *
  * That "instead of waiting" is the important part. Groq's retry-after is
  * not always small: when a longer window is spent it asks for minutes,
@@ -158,6 +160,7 @@ export class GroqProvider implements LLMProvider {
   readonly name = 'groq';
 
   async complete(messages: Message[], opts: CompleteOptions = {}): Promise<string> {
+    const effort = env.groqReasoningEffort();
     const body = JSON.stringify({
       model: env.groqModel(),
       messages,
@@ -166,6 +169,9 @@ export class GroqProvider implements LLMProvider {
       // Groq's native JSON mode. Belt and braces alongside our own
       // prompting and Zod validation.
       ...(opts.json ? { response_format: { type: 'json_object' } } : {}),
+      // GPT-OSS only; unset for qwen. Cuts the model's own thinking tokens,
+      // which are redundant with the loop's explicit reasoning.
+      ...(effort ? { reasoning_effort: effort } : {}),
     });
 
     const response = await callWithRetry(

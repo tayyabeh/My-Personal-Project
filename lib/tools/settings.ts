@@ -30,9 +30,7 @@ function hhmm(value: unknown): string {
 
 const showSettings: Tool<Record<string, never>> = {
   name: 'show_settings',
-  description:
-    'Abhi ke sare waqt aur settings dikhao: morning, night, check-ins, weekly review, learning ' +
-    'reminder, namaz reminders, awaz.',
+  description: 'Sare waqt/settings dikhao (morning, night, check-ins, weekly, namaz, awaz).',
   args: '(koi argument nahi)',
   schema: z.object({}),
   async run() {
@@ -77,11 +75,10 @@ type Patch = {
 const updateSettings: Tool<Patch> = {
   name: 'update_settings',
   description:
-    'Ek ya zyada settings badlo. Keys: morning_time, night_time, weekly_time, resurface_time ' +
-    '("HH:MM"); checkin_times (string[] — poori nayi list, purani ko badal degi); weekly_dow ' +
-    '(0=Sunday..6=Saturday); namaz_reminders (true/false); namaz_minutes_before (number); ' +
-    'tts_voice (' + Object.keys(VOICES).join('/') + ').',
-  args: 'koi bhi editable key (upar dekho)',
+    'Settings badlo. Keys: morning_time/night_time/weekly_time/resurface_time ("HH:MM"), ' +
+    'checkin_times (string[], poori nayi list), weekly_dow (0-6), namaz_reminders (bool), ' +
+    'namaz_minutes_before (num), tts_voice (' + Object.keys(VOICES).join('/') + ').',
+  args: 'koi bhi editable key',
   schema: z.object({
     morning_time: z.string().max(10).optional(),
     night_time: z.string().max(10).optional(),

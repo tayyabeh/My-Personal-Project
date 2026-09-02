@@ -37,7 +37,7 @@ function normaliseKind(kind: string): string {
 
 const logExpenseTool: Tool<{ text: string }> = {
   name: 'log_expense',
-  description: 'Kharcha likho. Poora jumla do — amount aur category main nikaal lunga. Currency PKR.',
+  description: 'Kharcha likho (poora jumla). PKR.',
   args: 'text: string',
   schema: z.object({ text: z.string().min(2).max(500) }),
   async run({ text }, ctx) {
@@ -64,7 +64,7 @@ const logExpenseTool: Tool<{ text: string }> = {
 
 const monthSummaryTool: Tool<Record<string, never>> = {
   name: 'month_summary',
-  description: 'Is mahine ka kul kharcha, category ke hisab se.',
+  description: 'Is mahine ka kharcha category-wise.',
   args: '(koi argument nahi)',
   schema: z.object({}),
   async run() {
@@ -79,9 +79,7 @@ const monthSummaryTool: Tool<Record<string, never>> = {
 
 const saveRecord: Tool<{ kind: string; data: Record<string, unknown>; note?: string }> = {
   name: 'save_record',
-  description:
-    'Kisi bhi qism ki cheez mehfooz karo. "kind" us cheez ka naam (weight, mood, water, ' +
-    'chai_kharcha). Naya kind banane ke liye bas naya naam likh do.',
+  description: 'Kisi bhi kind ki cheez mehfooz karo (kind=weight/mood/water..., data). Naya kind = naya naam.',
   args: 'kind: string, data: object, note?: string',
   schema: z.object({
     kind: z.string().min(1).max(40),
@@ -107,7 +105,7 @@ const saveRecord: Tool<{ kind: string; data: Record<string, unknown>; note?: str
 
 const findRecords: Tool<{ kind: string; limit: number }> = {
   name: 'find_records',
-  description: 'Kisi kind ki purani entries dekho, nayi se purani. Trend batane se pehle yahi chalao.',
+  description: 'Kisi kind ki purani entries dekho. Trend batane se pehle yahi.',
   args: 'kind: string, limit?: number (default 20)',
   schema: z.object({ kind: z.string().min(1).max(40), limit: z.number().int().min(1).max(100).default(20) }),
   async run({ kind, limit }) {
@@ -133,7 +131,7 @@ const findRecords: Tool<{ kind: string; limit: number }> = {
 
 const listKinds: Tool<Record<string, never>> = {
   name: 'list_kinds',
-  description: 'Ab tak kis kis cheez ka record rakha ja raha hai, har ek ki ginti ke saath.',
+  description: 'Kya kya track ho raha hai (ginti ke saath).',
   args: '(koi argument nahi)',
   schema: z.object({}),
   async run() {
@@ -176,7 +174,7 @@ const listKinds: Tool<Record<string, never>> = {
 
 const myProgress: Tool<Record<string, never>> = {
   name: 'my_progress',
-  description: 'Tayyab ki asli surat-e-haal: completion rate, pending tasks, kya tala ja raha hai.',
+  description: 'Asli surat-e-haal: completion rate, pending, rollover.',
   args: '(koi argument nahi)',
   schema: z.object({}),
   async run() {
@@ -187,7 +185,7 @@ const myProgress: Tool<Record<string, never>> = {
 
 const saveLearningTool: Tool<{ text: string }> = {
   name: 'save_learning',
-  description: 'Koi seekhi hui cheez mehfooz karo. 3 din, 1 hafte, 2 hafte aur 1 mahine baad yaad dilai jayegi.',
+  description: 'Seekhi hui baat mehfooz karo (baad mein yaad dilayi jayegi).',
   args: 'text: string',
   schema: z.object({ text: z.string().min(3).max(2000) }),
   async run({ text }, ctx) {
@@ -206,9 +204,7 @@ const saveLearningTool: Tool<{ text: string }> = {
 
 const askReflectionTool: Tool<Record<string, never>> = {
   name: 'ask_reflection',
-  description:
-    'User se poocho ke aaj kal kya soch rahe hain aur kahan kamzori lagti hai. Tab chalao jab ' +
-    'podcast maanga ho lekin kitab ka naam na liya ho aur haal bhi na bataya ho.',
+  description: 'Podcast se pehle haal poocho (jab kitab/haal na diya ho), phir ruk jao.',
   args: '(koi argument nahi)',
   schema: z.object({}),
   async run(_args, ctx) {
@@ -224,9 +220,7 @@ const askReflectionTool: Tool<Record<string, never>> = {
 
 const makePodcast: Tool<{ request: string }> = {
   name: 'make_podcast',
-  description:
-    'Kisi kitab ka summary podcast bana kar voice message bhejo. Sirf tab jab user ne KITAB ka ' +
-    'naam liya ho, ya pehle apna haal bata diya ho.',
+  description: 'Kitab ka summary podcast voice bhejo (jab kitab/haal diya ho).',
   args: 'request: string (user ka poora jumla ya bataya hua haal)',
   schema: z.object({ request: z.string().min(2).max(2000) }),
   async run({ request }, ctx) {

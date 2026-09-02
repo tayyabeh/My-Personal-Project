@@ -15,7 +15,7 @@ import { ok, fail, type Tool } from './types';
 
 const searchDriveTool: Tool<{ request: string }> = {
   name: 'search_drive',
-  description: 'Google Drive mein file dhoondo (naam ya andar ke matn se). Poora jumla do.',
+  description: 'Drive mein file dhoondo (jumla do).',
   args: 'request: string',
   schema: z.object({ request: z.string().min(2).max(300) }),
   async run({ request }) {
@@ -26,7 +26,7 @@ const searchDriveTool: Tool<{ request: string }> = {
 
 const readDriveFile: Tool<{ id: string }> = {
   name: 'read_drive_file',
-  description: 'Ek Drive file khol kar uska khulasa do, us id se jo search_drive ne di.',
+  description: 'Drive file khol kar khulasa (id search_drive se).',
   args: 'id: string',
   schema: z.object({ id: z.string().min(5).max(120) }),
   async run({ id }, ctx) {
@@ -68,7 +68,7 @@ const readDriveFile: Tool<{ id: string }> = {
 
 const listDriveFolder: Tool<{ folderId: string }> = {
   name: 'list_drive_folder',
-  description: 'Ek Drive folder ke andar ki files dikhao, folder ki id ke saath.',
+  description: 'Folder ke andar ki files (folderId).',
   args: 'folderId: string',
   schema: z.object({ folderId: z.string().min(5).max(120) }),
   async run({ folderId }, ctx) {
@@ -87,9 +87,7 @@ const listDriveFolder: Tool<{ folderId: string }> = {
 
 const uploadToDrive: Tool<{ note: string }> = {
   name: 'upload_to_drive',
-  description:
-    'Koi file Google Drive pe upload karo. (Abhi ye kaam nahi kar sakta — is ke liye drive.file ' +
-    'scope chahiye jo Phase 4 mein add hoga.)',
+  description: 'Drive pe upload — abhi band (Phase 4).',
   args: 'note: string (kya upload karna tha)',
   schema: z.object({ note: z.string().max(500).default('') }),
   async run({ note }, ctx) {

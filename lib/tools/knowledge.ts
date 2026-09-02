@@ -16,7 +16,7 @@ const NOT_YET = 'Knowledge store abhi ready nahi (Phase 5 mein aayega). Is waqt 
 
 const knowledgeSearch: Tool<{ query: string }> = {
   name: 'knowledge_search',
-  description: 'Store ki hui kitabon/documents mein se jawab dhoondo. (Abhi Phase 5 tak band.)',
+  description: 'Kitabon mein jawab dhoondo — abhi band (Phase 5).',
   args: 'query: string',
   schema: z.object({ query: z.string().min(1).max(300) }),
   async run(_args, ctx) {
@@ -26,7 +26,7 @@ const knowledgeSearch: Tool<{ query: string }> = {
 
 const knowledgeAddUrl: Tool<{ url: string }> = {
   name: 'knowledge_add_url',
-  description: 'Kisi link ko knowledge store mein daalo. (Abhi Phase 5 tak band.)',
+  description: 'Link store mein daalo — abhi band (Phase 5).',
   args: 'url: string',
   schema: z.object({ url: z.string().max(500) }),
   async run(_args, ctx) {
@@ -36,7 +36,7 @@ const knowledgeAddUrl: Tool<{ url: string }> = {
 
 const knowledgeAddDrive: Tool<{ id: string }> = {
   name: 'knowledge_add_drive',
-  description: 'Kisi Drive file ko knowledge store mein daalo. (Abhi Phase 5 tak band.)',
+  description: 'Drive file store mein daalo — abhi band (Phase 5).',
   args: 'id: string',
   schema: z.object({ id: z.string().max(120) }),
   async run(_args, ctx) {
@@ -46,7 +46,7 @@ const knowledgeAddDrive: Tool<{ id: string }> = {
 
 const knowledgeList: Tool<Record<string, never>> = {
   name: 'knowledge_list',
-  description: 'Store ki hui kitabein/documents dikhao. (Abhi Phase 5 tak band.)',
+  description: 'Store ki documents dikhao — abhi band (Phase 5).',
   args: '(koi argument nahi)',
   schema: z.object({}),
   async run(_args, ctx) {
@@ -56,7 +56,7 @@ const knowledgeList: Tool<Record<string, never>> = {
 
 const knowledgeForget: Tool<{ name: string }> = {
   name: 'knowledge_forget',
-  description: 'Ek document store se hata do. (Abhi Phase 5 tak band.)',
+  description: 'Document store se hatao — abhi band (Phase 5).',
   args: 'name: string',
   schema: z.object({ name: z.string().max(200) }),
   async run(_args, ctx) {

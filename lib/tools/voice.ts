@@ -21,9 +21,7 @@ async function currentVoice(): Promise<string> {
 
 const sendAsVoice: Tool<{ text: string; topic: string }> = {
   name: 'send_as_voice',
-  description:
-    'Kisi bhi matn ko awaz mein badal kar voice message bhejo. Jab user kahe "voice mein sunao", ' +
-    '"bol kar batao" — tab chalao. Jo text do wahi bola jayega, to pehle maloomat jama karo.',
+  description: 'Matn ko awaz bana kar voice message bhejo (text + topic). Jo text do wahi bolega.',
   args: 'text: string (jo bolna hai), topic: string (chhota naam, save karne ke liye)',
   schema: z.object({ text: z.string().min(20).max(4000), topic: z.string().min(2).max(120) }),
   async run({ text, topic }) {
@@ -57,7 +55,7 @@ const sendAsVoice: Tool<{ text: string; topic: string }> = {
 
 const setVoice: Tool<{ voice: string }> = {
   name: 'set_voice',
-  description: `Awaz badlo. In mein se ek: ${Object.keys(VOICES).join(', ')}.`,
+  description: `Awaz badlo (${Object.keys(VOICES).join('/')}).`,
   args: 'voice: string',
   schema: z.object({ voice: z.string().min(2).max(20) }),
   async run({ voice }) {

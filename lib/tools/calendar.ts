@@ -33,8 +33,8 @@ function whenText(iso: string): string {
 
 const upcoming: Tool<{ hours: number }> = {
   name: 'upcoming_events',
-  description: 'Google Calendar se aane wale events dekho.',
-  args: 'hours: number (kitne ghante aage tak)',
+  description: 'Aane wale calendar events (hours aage tak).',
+  args: 'hours: number',
   schema: z.object({ hours: z.number().int().min(1).max(2400).default(24) }),
   async run({ hours }, ctx) {
     const events = await upcomingEvents(hours, ctx.signal);
@@ -57,9 +57,7 @@ const upcoming: Tool<{ hours: number }> = {
 
 const findCalendarEvents: Tool<{ query: string }> = {
   name: 'find_events',
-  description:
-    'Google Calendar mein kisi bhi event ko naam se dhoondo — chahe humne banaya ho ya ' +
-    'Tayyab ne khud app mein. Har event ki id milti hai.',
+  description: 'Calendar event naam se dhoondo (id ke saath).',
   args: 'query: string',
   schema: z.object({ query: z.string().min(1).max(120) }),
   async run({ query }, ctx) {
@@ -80,8 +78,7 @@ const findCalendarEvents: Tool<{ query: string }> = {
 
 const createCalendarEvent: Tool<{ title: string; whenText: string; durationMinutes?: number }> = {
   name: 'create_event',
-  description:
-    'Google Calendar pe ek naya event banao. when poore jumle mein do, jaise "kal shaam 6 baje".',
+  description: 'Naya calendar event banao (title + whenText jumla).',
   args: 'title: string, whenText: string, durationMinutes?: number',
   schema: z.object({
     title: z.string().min(1).max(200),
@@ -114,9 +111,7 @@ const createCalendarEvent: Tool<{ title: string; whenText: string; durationMinut
 
 const updateCalendarEvent: Tool<{ id: string; title?: string; whenText?: string }> = {
   name: 'update_event',
-  description:
-    'Kisi calendar event ka naam ya waqt badlo. id find_events se lo. Sirf wahi cheez do jo ' +
-    'badalni hai — baaki waise hi rahegi.',
+  description: 'Event ka naam/waqt badlo (id find_events se, sirf jo badalna hai).',
   args: 'id: string, title?: string, whenText?: string',
   schema: z.object({
     id: z.string().min(5).max(120),
@@ -158,9 +153,7 @@ const updateCalendarEvent: Tool<{ id: string; title?: string; whenText?: string 
 
 const deleteCalendarEvent: Tool<{ id: string }> = {
   name: 'delete_event',
-  description:
-    'Google Calendar se koi bhi event hata do, us id se jo find_events ne di. Ye wo events ' +
-    'bhi hata sakta hai jo Tayyab ne khud banaye the.',
+  description: 'Calendar event hatao (id find_events se).',
   args: 'id: string',
   schema: z.object({ id: z.string().min(5).max(120) }),
   async run({ id }, ctx) {
@@ -185,9 +178,7 @@ const deleteCalendarEvent: Tool<{ id: string }> = {
 
 const setReminder: Tool<{ text: string }> = {
   name: 'set_reminder',
-  description:
-    'Kisi khaas waqt ka reminder lagao. User ka poora jumla do — waqt main nikaal lunga. ' +
-    'Calendar pe event bhi ban jayega. Agar waqt na bataya ho to pehle user se poochna behtar hai.',
+  description: 'Waqt ka reminder lagao (poora jumla). Calendar event bhi banega. Waqt na ho to poocho.',
   args: 'text: string',
   schema: z.object({ text: z.string().min(3).max(500) }),
   async run({ text }, ctx) {
@@ -222,7 +213,7 @@ const setReminder: Tool<{ text: string }> = {
 
 const listReminders: Tool<Record<string, never>> = {
   name: 'list_reminders',
-  description: 'Wo sare reminders dikhao jo abhi tak bheje nahi gaye, har ek ki id ke saath.',
+  description: 'Pending reminders + id dikhao.',
   args: '(koi argument nahi)',
   schema: z.object({}),
   async run() {
@@ -250,9 +241,7 @@ const listReminders: Tool<Record<string, never>> = {
 
 const cancelReminder: Tool<{ id: string }> = {
   name: 'cancel_reminder',
-  description:
-    'Ek reminder cancel karo, us id se jo list_reminders ne di. Google Calendar wala event ' +
-    'bhi hat jayega.',
+  description: 'Reminder cancel karo (id list_reminders se). Calendar event bhi hatega.',
   args: 'id: string',
   schema: z.object({ id: z.string().min(8).max(60) }),
   async run({ id }, ctx) {
@@ -283,9 +272,7 @@ const cancelReminder: Tool<{ id: string }> = {
 
 const rescheduleReminder: Tool<{ id: string; when: string }> = {
   name: 'reschedule_reminder',
-  description:
-    'Kisi reminder ka waqt badlo. id list_reminders se lo. when poore jumle mein do, jaise ' +
-    '"3 September raat 11 baje".',
+  description: 'Reminder ka waqt badlo (id + naya waqt jumle mein).',
   args: 'id: string, when: string',
   schema: z.object({ id: z.string().min(8).max(60), when: z.string().min(3).max(300) }),
   async run({ id, when }, ctx) {
@@ -335,8 +322,7 @@ const rescheduleReminder: Tool<{ id: string; when: string }> = {
 
 const namazTimes: Tool<Record<string, never>> = {
   name: 'namaz_times',
-  description:
-    'Aaj ki namaz timings batao (Karachi ke hisab se) aur pehle ke reminders laga do.',
+  description: 'Aaj ki namaz timings + reminders laga do.',
   args: '(koi argument nahi)',
   schema: z.object({}),
   async run(_args, ctx) {
@@ -368,11 +354,8 @@ const setNamazTimes: Tool<{
   clear?: boolean;
 }> = {
   name: 'set_namaz_times',
-  description:
-    'Tayyab ki apni (jamaat ki) namaz timings save karo. Sirf wahi namazein do jo usne batayi ' +
-    'hain. Waqt 24-hour mein: Asr "5 baje" = "17:00". clear:true dene se wapas calculated waqt ' +
-    'pe aa jao.',
-  args: 'Fajr?, Dhuhr?, Asr?, Maghrib?, Isha? — "HH:MM"; ya clear: true',
+  description: 'Apni jamaat timings set karo (HH:MM, 24-hour: Asr 5=17:00). clear:true = calculated pe wapas.',
+  args: 'Fajr?/Dhuhr?/Asr?/Maghrib?/Isha? "HH:MM"; ya clear:true',
   schema: z.object({
     Fajr: z.string().max(8).optional(),
     Dhuhr: z.string().max(8).optional(),

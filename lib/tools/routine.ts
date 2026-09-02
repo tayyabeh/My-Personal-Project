@@ -17,7 +17,7 @@ import { ok, fail, type Tool } from './types';
 
 const listTasks: Tool<Record<string, never>> = {
   name: 'list_tasks',
-  description: 'Sare pending tasks dekho, unki id aur kitni dafa tale gaye hain ke saath.',
+  description: 'Pending tasks + id dikhao.',
   args: '(koi argument nahi)',
   schema: z.object({}),
   async run() {
@@ -42,8 +42,7 @@ const listTasks: Tool<Record<string, never>> = {
 
 const addTasks: Tool<{ text: string }> = {
   name: 'add_tasks',
-  description:
-    'User ke jumle se tasks nikaal kar save karo. Poora jumla do, khud se list mat banao.',
+  description: 'Jumle se tasks nikaal kar save karo. Poora jumla do.',
   args: 'text: string',
   schema: z.object({ text: z.string().min(2).max(2000) }),
   async run({ text }, ctx) {
@@ -91,7 +90,7 @@ const addTasks: Tool<{ text: string }> = {
 
 const completeTaskTool: Tool<{ text: string }> = {
   name: 'complete_task',
-  description: 'Koi task done mark karo. User ke lafz do, main khud match kar lunga.',
+  description: 'Task done mark karo (user ke lafz do).',
   args: 'text: string',
   schema: z.object({ text: z.string().min(1).max(500) }),
   async run({ text }, ctx) {
@@ -172,11 +171,8 @@ const BatchSchema = z.object({
 
 const cancelTask: Tool<{ ids?: string[]; all?: boolean }> = {
   name: 'cancel_task',
-  description:
-    'Ek ya zyada tasks cancel karo (done nahi — chhod diya) EK hi call mein. ids mein har task ' +
-    'ki id ya title ka hissa do. Sare pending cancel karne ho to all: true. "sab cancel kar do" ' +
-    'jaisi baat pe ek hi dafa ye chalao — har task ke liye alag call MAT karo.',
-  args: 'ids?: string[] (id ya title ke hisse), all?: boolean',
+  description: 'Task(s) cancel karo EK hi call mein. ids: string[] (id/title) ya all:true. Har task ke liye alag call mat karo.',
+  args: 'ids?: string[], all?: boolean',
   schema: BatchSchema,
   async run({ ids, all }, ctx) {
     const { tasks, missing } = await resolveTargets(ids, all);
@@ -210,11 +206,8 @@ const cancelTask: Tool<{ ids?: string[]; all?: boolean }> = {
 
 const deleteTask: Tool<{ ids?: string[]; all?: boolean }> = {
   name: 'delete_task',
-  description:
-    'Ek ya zyada tasks hamesha ke liye mita do EK hi call mein. ids mein id ya title ka hissa ' +
-    'do. Sare pending mitane ho to all: true. Calendar ke events bhi hat jayenge. "sab delete ' +
-    'kar do" pe ek hi dafa ye chalao — har task ke liye alag call MAT karo.',
-  args: 'ids?: string[] (id ya title ke hisse), all?: boolean',
+  description: 'Task(s) hamesha ke liye mitao EK hi call mein (calendar event bhi hatega). ids: string[] ya all:true. Alag call mat karo.',
+  args: 'ids?: string[], all?: boolean',
   schema: BatchSchema,
   async run({ ids, all }, ctx) {
     const { tasks, missing } = await resolveTargets(ids, all);
@@ -248,7 +241,7 @@ const deleteTask: Tool<{ ids?: string[]; all?: boolean }> = {
 
 const renameTask: Tool<{ id: string; title: string }> = {
   name: 'rename_task',
-  description: 'Kisi task ka naam badlo. id list_tasks se lo, ya purane title ka hissa do.',
+  description: 'Task ka naam badlo (id/title + naya naam).',
   args: 'id: string, title: string (naya naam)',
   schema: z.object({ id: z.string().min(1).max(200), title: z.string().min(1).max(200) }),
   async run({ id, title }, ctx) {
@@ -277,9 +270,7 @@ const renameTask: Tool<{ id: string; title: string }> = {
 
 const mergeTasks: Tool<{ keep: string; remove: string }> = {
   name: 'merge_tasks',
-  description:
-    'Do tasks ko ek karo — jo rakhna hai uski id/title "keep" mein, jo hatana hai wo "remove" mein. ' +
-    'Remove wala cancel ho jayega.',
+  description: 'Do tasks ek karo: keep rakho, remove cancel ho jayega.',
   args: 'keep: string, remove: string',
   schema: z.object({ keep: z.string().min(1).max(200), remove: z.string().min(1).max(200) }),
   async run({ keep, remove }, ctx) {
@@ -313,7 +304,7 @@ const mergeTasks: Tool<{ keep: string; remove: string }> = {
 
 const showRoutine: Tool<Record<string, never>> = {
   name: 'show_routine',
-  description: 'Wo tasks dikhao jo har subah khud ba khud lag jate hain.',
+  description: 'Roz khud lagne wale tasks dikhao.',
   args: '(koi argument nahi)',
   schema: z.object({}),
   async run() {
@@ -337,10 +328,7 @@ const showRoutine: Tool<Record<string, never>> = {
 
 const editRoutine: Tool<{ tasks: string[] }> = {
   name: 'edit_routine',
-  description:
-    'Roz khud lagne wale tasks ki poori nayi list do. Ye purani list ko badal deti hai, usme ' +
-    'jorti nahi — kuch add karna ho to pehle show_routine se purani list lo. Khali list dene se ' +
-    'ye feature band ho jayega.',
+  description: 'Roz ke tasks ki poori nayi list set karo (purani badal degi, jorti nahi).',
   args: 'tasks: string[]  (jaise ["Gym","Namaz (paanchon waqt)"])',
   schema: z.object({ tasks: z.array(z.string().min(1).max(120)).max(10) }),
   async run({ tasks }, ctx) {

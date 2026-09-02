@@ -21,9 +21,7 @@ import { ok, fail, type Tool } from './types';
 
 const searchInbox: Tool<{ query: string }> = {
   name: 'search_mail',
-  description:
-    'Inbox mein emails dhoondo. Gmail syntax: newer_than:2d, from:, subject:, is:unread, ' +
-    'category:primary. Har result ka id wapas milta hai.',
+  description: 'Inbox emails dhoondo (Gmail query: newer_than:2d, from:, is:unread). id wapas milta hai.',
   args: 'query: string',
   schema: z.object({ query: z.string().min(1).max(300) }),
   async run({ query }, ctx) {
@@ -49,7 +47,7 @@ const searchInbox: Tool<{ query: string }> = {
 
 const readEmail: Tool<{ id: string }> = {
   name: 'read_email',
-  description: 'Ek email ka POORA matn parho, us id se jo search_mail ne di.',
+  description: 'Email ka poora matn parho (id search_mail se).',
   args: 'id: string',
   schema: z.object({ id: z.string().min(5).max(80) }),
   async run({ id }, ctx) {
@@ -67,9 +65,7 @@ const readEmail: Tool<{ id: string }> = {
 
 const emailDigest: Tool<{ request: string }> = {
   name: 'email_digest',
-  description:
-    'Kisi topic par inbox ka khulasa banao, jaise "aaj ke AI updates" ya "is hafte bank ke ' +
-    'emails". Poora jumla do.',
+  description: 'Kisi topic par inbox ka khulasa (poora jumla do).',
   args: 'request: string',
   schema: z.object({ request: z.string().min(2).max(300) }),
   async run({ request }) {
@@ -85,9 +81,7 @@ const emailDigest: Tool<{ request: string }> = {
 
 const draftReply: Tool<{ to: string; subject: string; body: string }> = {
   name: 'draft_reply',
-  description:
-    'Gmail mein ek DRAFT banao. Ye bhejta NAHI — sirf draft save karta hai jise Tayyab khud ' +
-    'dekh kar bhejega.',
+  description: 'Gmail DRAFT banao (bhejta NAHI, Tayyab khud bhejega).',
   args: 'to: string, subject: string, body: string',
   schema: z.object({
     to: z.string().min(3).max(200),
@@ -114,7 +108,7 @@ const draftReply: Tool<{ to: string; subject: string; body: string }> = {
 
 const markRead: Tool<{ id: string; read: boolean }> = {
   name: 'mark_read',
-  description: 'Email ko read ya unread mark karo.',
+  description: 'Email read/unread mark karo.',
   args: 'id: string, read: boolean',
   schema: z.object({ id: z.string().min(5).max(80), read: z.boolean().default(true) }),
   async run({ id, read }, ctx) {
@@ -136,7 +130,7 @@ const markRead: Tool<{ id: string; read: boolean }> = {
 
 const archiveEmail: Tool<{ id: string }> = {
   name: 'archive_email',
-  description: 'Email ko inbox se hata kar archive karo. Delete nahi hota — search mein milta rahega.',
+  description: 'Email inbox se archive karo (delete nahi).',
   args: 'id: string',
   schema: z.object({ id: z.string().min(5).max(80) }),
   async run({ id }, ctx) {
@@ -156,9 +150,7 @@ const archiveEmail: Tool<{ id: string }> = {
 
 const trashEmail: Tool<{ id: string }> = {
   name: 'trash_email',
-  description:
-    'Email ko Trash mein daalo (30 din tak wapas mil sakta hai). SIRF tab jab Tayyab ne saaf ' +
-    'kaha ho ke isko delete karo — khud se andaza laga kar kabhi nahi.',
+  description: 'Email Trash mein daalo. SIRF jab Tayyab saaf kahe delete karo — khud se kabhi nahi.',
   args: 'id: string',
   schema: z.object({ id: z.string().min(5).max(80) }),
   async run({ id }, ctx) {
@@ -178,7 +170,7 @@ const trashEmail: Tool<{ id: string }> = {
 
 const listLabelsTool: Tool<Record<string, never>> = {
   name: 'list_labels',
-  description: 'Gmail ke sare labels dikhao (system aur khud banaye hue).',
+  description: 'Gmail labels dikhao.',
   args: '(koi argument nahi)',
   schema: z.object({}),
   async run(_args, ctx) {
@@ -200,7 +192,7 @@ const listLabelsTool: Tool<Record<string, never>> = {
 
 const listNewsletters: Tool<Record<string, never>> = {
   name: 'list_newsletters',
-  description: 'Wo newsletters dikhao jinka khulasa 12 baje ke digest mein alag banta hai.',
+  description: 'Digest wale newsletters dikhao.',
   args: '(koi argument nahi)',
   schema: z.object({}),
   async run() {
@@ -224,9 +216,7 @@ const listNewsletters: Tool<Record<string, never>> = {
 
 const addNewsletter: Tool<{ name: string; sender?: string }> = {
   name: 'add_newsletter',
-  description:
-    'Ek newsletter add karo jiska digest mein alag khulasa bane. name us newsletter ka naam, ' +
-    'sender us ka email address ya from-ka-hissa.',
+  description: 'Newsletter add karo (name + sender email).',
   args: 'name: string, sender?: string',
   schema: z.object({ name: z.string().min(1).max(80), sender: z.string().max(200).optional() }),
   async run({ name, sender }, ctx) {
@@ -246,7 +236,7 @@ const addNewsletter: Tool<{ name: string; sender?: string }> = {
 
 const removeNewsletter: Tool<{ name: string }> = {
   name: 'remove_newsletter',
-  description: 'Ek newsletter hata do. name wahi jo list_newsletters mein dikha.',
+  description: 'Newsletter hatao (name).',
   args: 'name: string',
   schema: z.object({ name: z.string().min(1).max(80) }),
   async run({ name }, ctx) {

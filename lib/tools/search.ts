@@ -16,9 +16,7 @@ import { ok, type Tool } from './types';
 
 const webSearch: Tool<{ query: string }> = {
   name: 'web_search',
-  description:
-    'Internet pe dhoondo aur sources ke saath jawab lao. Khabron, taazgi wali maloomat, ya ' +
-    'kisi cheez ki tafseel ke liye.',
+  description: 'Internet pe dhoondo, sources ke saath jawab.',
   args: 'query: string',
   schema: z.object({ query: z.string().min(2).max(300) }),
   async run({ query }) {
@@ -29,7 +27,7 @@ const webSearch: Tool<{ query: string }> = {
 
 const readLink: Tool<{ url: string }> = {
   name: 'read_link',
-  description: 'Kisi web page ko khol kar parho aur uska khulasa do.',
+  description: 'Web page khol kar khulasa do (url).',
   args: 'url: string',
   schema: z.object({ url: z.string().url().max(500) }),
   async run({ url }) {
@@ -40,9 +38,7 @@ const readLink: Tool<{ url: string }> = {
 
 const researchEmail: Tool<{ question: string }> = {
   name: 'research_email',
-  description:
-    'Kisi sawal ka jawab web se lao aur usko inbox ke emails se milao — jaise "is topic pe ' +
-    'jo email aayi thi wo bahar ki khabar se match karti hai?".',
+  description: 'Sawal ka web jawab inbox ke emails se milao.',
   args: 'question: string',
   schema: z.object({ question: z.string().min(3).max(300) }),
   async run({ question }, ctx) {

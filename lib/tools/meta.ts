@@ -34,10 +34,7 @@ export async function recordRefusal(
 
 const cannotDo: Tool<{ reason: string }> = {
   name: 'cannot_do',
-  description:
-    'Jab koi kaam ka tool hi nahi hai, to jhoota wada karne ke bajaye ye chalao. Saaf batao ke ' +
-    'kya nahi ho sakta aur kyun. Ye dashboard pe nazar aayega taake baad mein wo capability ' +
-    'add ho sake.',
+  description: 'Koi tool na ho to jhoota wada mat karo — ye chalao aur saaf batao kya nahi ho sakta.',
   args: 'reason: string (kya nahi ho sakta, aur kyun)',
   schema: z.object({ reason: z.string().min(3).max(500) }),
   async run({ reason }, ctx) {
@@ -47,7 +44,7 @@ const cannotDo: Tool<{ reason: string }> = {
 
 const listCapabilities: Tool<Record<string, never>> = {
   name: 'list_capabilities',
-  description: 'Batao ke assistant asal mein kya kya kar sakta hai — asli tool list se.',
+  description: 'Batao assistant kya kar sakta hai (asli tool list se).',
   args: '(koi argument nahi)',
   schema: z.object({}),
   async run() {
@@ -109,7 +106,7 @@ interface WriteOpRow {
 
 const undoLast: Tool<Record<string, never>> = {
   name: 'undo_last',
-  description: 'Aakhri kaam jo kiya tha use wapas karo (agar wapas ho sakta hai).',
+  description: 'Aakhri kaam wapas karo (agar ho sakta hai).',
   args: '(koi argument nahi)',
   schema: z.object({}),
   async run(_args, ctx) {

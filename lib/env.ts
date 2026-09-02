@@ -35,6 +35,10 @@ export const env = {
   groqApiKey: () => required('GROQ_API_KEY'),
   groqModel: () => optional('GROQ_MODEL', 'qwen/qwen3.8-27b'),
   groqWhisperModel: () => optional('GROQ_WHISPER_MODEL', 'whisper-large-v3-turbo'),
+  // Only the GPT-OSS models accept this; leave unset for qwen. 'low' cuts
+  // the model's own thinking (we reason in the loop anyway), 'medium'/'high'
+  // buy more. Sent only when set, so it never 400s a model that lacks it.
+  groqReasoningEffort: () => optional('GROQ_REASONING_EFFORT'),
   geminiApiKey: () => required('GEMINI_API_KEY'),
   geminiModel: () => optional('GEMINI_MODEL', 'gemini-2.0-flash'),
 
